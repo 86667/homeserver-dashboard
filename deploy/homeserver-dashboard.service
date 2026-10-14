@@ -1,0 +1,79 @@
+# Example unit: the systemd wrapper around the bundle, for a homeserver that
+# itself runs as a plain systemd service on the same host. The README
+# ("Deployment") has the install commands; the reason for each setting is here.
+#
+# Assumes the homeserver's user and group are `pubky`, its data directory is
+# /home/pubky/.pubky, its ports are the default ones, Node.js 24+ is at
+# /usr/bin/node and a `homeserver-dashboard` system user exists. Edit to
+# match your host.
+
+[Unit]
+Description=Pubky homeserver dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Its own user, not the homeserver's. With the homeserver's user, a
+# compromised dashboard could read the homeserver's key through
+# /proc/<homeserver pid>/root, which no sandboxing option below hides, and
+# could signal the homeserver. The homeserver's group is enough to read
+# config.toml (through a home directory that is 0750 on current Ubuntu); the
+# key file is 0600, so the group cannot read it.
+User=homeserver-dashboard
+Group=pubky
+# The bundle: a copy of .next/standalone after `npm run bundle`.
+WorkingDirectory=/opt/homeserver-dashboard
+ExecStart=/usr/bin/node server.js
+Environment=NODE_ENV=production
+
+# The dashboard has no login of its own: whoever can reach this port is an
+# admin and can reveal the admin password. Keep it on loopback and reach it
+# through an SSH tunnel or a reverse proxy that authenticates. Without
+# HOSTNAME it listens on every interface.
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=8080
+
+# The admin password, ADMIN_TOKEN=<[admin] admin_password from config.toml>.
+# It lives in its own file because this unit is world-readable. systemd reads
+# the file as root before switching users, so it can be root-only (0600) and
+# the dashboard's user never needs to read it. When you change admin_password
+# in config.toml, update this file too and restart both services.
+EnvironmentFile=/etc/homeserver-dashboard.env
+
+# Where the homeserver is.
+Environment=ADMIN_BASE_URL=http://127.0.0.1:6288
+Environment=HOMESERVER_CONFIG_PATH=/home/pubky/.pubky/config.toml
+# Only the API explorer tab uses these two, and it exists only in a bundle
+# built with NEXT_PUBLIC_API_EXPLORER=true. Their built-in defaults are Docker
+# service names (http://homeserver:...), which do not resolve on a plain host.
+Environment=CLIENT_BASE_URL=http://127.0.0.1:6286
+Environment=METRICS_BASE_URL=http://127.0.0.1:6289
+# The Logs tab reads a file and stays hidden without one. A homeserver that
+# only logs to journald has none; if yours also writes a log file, point at it.
+#Environment=HOMESERVER_LOG_PATH=/home/pubky/.pubky/homeserver.log
+
+Restart=on-failure
+RestartSec=5
+# server.js exits with 143 when it gets SIGTERM. Without this, every stop or
+# restart is recorded as a failure and `systemctl stop` leaves the unit failed.
+SuccessExitStatus=143
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectProc=invisible
+ProtectSystem=strict
+# Keeps /home read-only, so Settings shows config.toml but cannot save it.
+# To allow editing, add `ReadWritePaths=` with the homeserver's data
+# directory, and make that directory and config.toml group-writable: a save
+# writes a temporary file next to config.toml and renames it over the
+# original, keeping its mode.
+ProtectHome=read-only
+# Defence in depth: the key's 0600 mode already keeps it from this user, and
+# this also hides it should that mode ever be wider. No `-` prefix on purpose:
+# if the path is wrong (a moved data directory), the unit fails to start
+# instead of silently hiding nothing. It also means the homeserver must have
+# run once, creating its key, before this starts.
+InaccessiblePaths=/home/pubky/.pubky/secret
+
+[Install]
+WantedBy=multi-user.target

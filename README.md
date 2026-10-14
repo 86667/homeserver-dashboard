@@ -101,6 +101,53 @@ The Dockerfile uses Next.js standalone output for optimal image size and include
 - Non-root user for security
 - Proper handling of server-only environment variables
 
+## systemd Deployment
+
+For a homeserver that runs as a plain systemd service, the dashboard can run next to it without Docker. It needs Node.js 24+ on the host and nothing else.
+
+`npm run bundle` runs `next build` and then makes `.next/standalone` self-contained, so that `node server.js` inside it is the whole application ([`scripts/bundle.mjs`](scripts/bundle.mjs) has the details). [`deploy/homeserver-dashboard.service`](deploy/homeserver-dashboard.service) is an example unit that runs it. The unit is an example: read it before installing. It states what it assumes about the host, and explains each setting, including how to turn on the `config.toml` editor and the Logs tab.
+
+**The dashboard has no login of its own.** Whoever can reach its port is an admin and can reveal the admin password. The unit binds it to loopback; reach it through an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 <host>`, then open `http://localhost:8080`) or a reverse proxy that authenticates. Loopback is not a login: any user or process on the host can still reach the port, and while a tunnel is open a web page in the same browser could reach it through DNS rebinding, so close the tunnel when you are not using it.
+
+Build the bundle and install it (it can also be built on another machine with the same OS and CPU architecture and copied over):
+
+```bash
+npm ci
+npm run bundle
+# Copy first and swap after
+sudo rm -rf /opt/homeserver-dashboard.new
+sudo cp -r .next/standalone /opt/homeserver-dashboard.new
+sudo rm -rf /opt/homeserver-dashboard && sudo mv /opt/homeserver-dashboard.new /opt/homeserver-dashboard
+```
+
+Give the dashboard the homeserver's admin password in a root-only file, which the unit loads. It must match `[admin] admin_password` in the homeserver's `config.toml`. A fresh homeserver leaves that commented out and accepts the well-known default `admin`, so set your own there first and restart the homeserver.
+
+```bash
+sudo install -m 600 /dev/null /etc/homeserver-dashboard.env
+echo 'ADMIN_TOKEN=<admin_password from config.toml>' | sudo tee /etc/homeserver-dashboard.env > /dev/null
+```
+
+The dashboard runs as its own user in the homeserver's group, not as the homeserver's user, so it can read `config.toml` (for Settings) but not the homeserver's key (the unit explains why). Create that user, then install the unit. Start the homeserver at least once first: the unit also hides the key file and refuses to start while that file does not exist.
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin homeserver-dashboard
+sudo cp deploy/homeserver-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now homeserver-dashboard
+```
+
+To change the admin password, change it in `config.toml` and in `/etc/homeserver-dashboard.env`, then restart both services.
+
+To upgrade, run the first block without its last line, then swap the new bundle in while the service is stopped. A running server loads parts of the bundle from disk as it needs them, so it must never see the new files:
+
+```bash
+sudo systemctl stop homeserver-dashboard
+sudo rm -rf /opt/homeserver-dashboard && sudo mv /opt/homeserver-dashboard.new /opt/homeserver-dashboard
+sudo systemctl start homeserver-dashboard
+```
+
+Nothing in the bundle is specific to systemd: any process manager can run `node server.js` with the same environment. Whichever you use, set `HOSTNAME=127.0.0.1`, or the server listens on every interface.
+
 ## Configuration
 
 ### Environment Variables
@@ -154,6 +201,7 @@ The same image serves both deployments; `PLATFORM` selects the experience:
 
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
+- `npm run bundle` - Build the self-contained bundle for running without Docker (see "systemd Deployment")
 - `npm start` - Start production server
 - `npm run lint` - Run ESLint (`eslint .`)
 - `npm run lint:fix` - Fix lint issues (`eslint . --fix`)

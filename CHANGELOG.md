@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The dashboard can run under systemd, without Docker. `npm run bundle` builds `.next/standalone` and makes it self-contained, so `node server.js` inside it is the whole application; it leaves out any `.env` / `.env.production` from the checkout and fails if the result is incomplete. `deploy/homeserver-dashboard.service` is an example unit that runs it: bound to loopback, as its own user in the homeserver's group (so it can read `config.toml` but not the homeserver's key), with the admin password in a root-only `EnvironmentFile`. CI builds the bundle. The Docker image is unchanged.
+
 ## [0.1.29]
 
 ### Fixed
