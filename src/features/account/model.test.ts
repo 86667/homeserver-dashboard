@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isInviteCode, normalizeInviteCode } from './account';
+import { isInviteCode, normalizeInviteCode } from './model';
 
 describe('normalizeInviteCode', () => {
   it.each([

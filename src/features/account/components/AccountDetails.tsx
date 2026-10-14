@@ -4,7 +4,7 @@ import { Check, CircleCheckBig, Copy, Info } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
-import type { Outcome } from './outcome';
+import type { Outcome } from '../outcome';
 
 interface AccountDetailsProps {
   outcome: Outcome;

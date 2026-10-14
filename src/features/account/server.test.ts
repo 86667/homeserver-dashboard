@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readAccountConfig } from './account-config';
+import { readAccountConfig } from './server';
 
 const KEY = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
 

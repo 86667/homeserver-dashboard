@@ -9,7 +9,7 @@
  * the browser: it is large, and its Node build must never run in the server.
  */
 import type { AuthToken, Capabilities, Pubky } from '@synonymdev/pubky';
-import { ACCOUNT_CAPABILITY, type AccountConfig, type AccountInfo, type InviteStatus } from '@/lib/account';
+import { ACCOUNT_CAPABILITY, type AccountConfig, type AccountInfo, type InviteStatus } from './model';
 import { withTimeout } from '@/lib/with-timeout';
 
 type Sdk = typeof import('@synonymdev/pubky');

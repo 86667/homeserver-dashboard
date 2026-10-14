@@ -1,5 +1,7 @@
 // The /account page against a real homeserver: sign-up with an invite code
-// and sign-in, in Chrome, with the Pubky SDK playing Pubky Ring.
+// and sign-in, in Chrome, with the Pubky SDK playing Pubky Ring. The
+// dashboard runs as a public instance (DASHBOARD_MODE=account), and the spec
+// checks the admin side is unreachable on it.
 //
 // Unlike the other specs this needs a real local pubky-testnet (the page's
 // browser side talks to the homeserver directly), so it skips when none is
@@ -104,10 +106,19 @@ await runSpec(
     await ring(await ringLink(page), Keypair.random());
     await page.waitForSelector('[data-testid="account-missing"]', { timeout: 30_000 });
     check(true, 'unknown key reported as no account');
+
+    step('an account instance serves nothing of the admin side');
+    for (const path of ['/dashboard', '/api/admin/info', '/api/server-config', '/cloudflare-guide']) {
+      const response = await fetch(`${env.baseUrl}${path}`, { redirect: 'manual' });
+      check(response.status === 404, `${path} is 404`, String(response.status));
+    }
+    const home = await fetch(`${env.baseUrl}/`, { redirect: 'manual' });
+    check(home.headers.get('location')?.endsWith('/account') ?? false, '/ sends visitors to /account');
   },
   {
     platform: 'standalone',
     env: {
+      DASHBOARD_MODE: 'account',
       HOMESERVER_PUBLIC_KEY: info.public_key,
       AUTH_RELAY: `http://${HOST}:15412/inbox`,
       PUBKY_TESTNET_HOST: HOST,

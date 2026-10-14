@@ -1,4 +1,4 @@
-import type { AccountInfo, InviteStatus } from '@/lib/account';
+import type { AccountInfo, InviteStatus } from './model';
 import type { RingRequestKind } from './homeserver-client';
 
 export type Outcome = { hasAccount: boolean; title: string; text: string };

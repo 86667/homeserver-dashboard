@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AccountInfo } from '@/lib/account';
+import type { AccountInfo } from './model';
 import { describeOutcome } from './outcome';
 
 const found: AccountInfo = { pubky: 'pk', hasAccount: true };

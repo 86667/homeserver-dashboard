@@ -1,4 +1,4 @@
-import type { AccountConfig } from '@/lib/account';
+import type { AccountConfig } from './model';
 
 /** A public key in z-base-32: 52 characters of its alphabet. The SDK checks it is a real key. */
 const Z32_KEY = /^[ybndrfg8ejkmcpqxot1uwisza345h769]{52}$/;

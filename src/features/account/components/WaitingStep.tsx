@@ -4,7 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Check, Copy, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
-import type { RingRequestKind } from './homeserver-client';
+import type { RingRequestKind } from '../homeserver-client';
 
 interface WaitingStepProps {
   kind: RingRequestKind;

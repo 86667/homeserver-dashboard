@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACCOUNT_CAPABILITY, type AccountConfig } from '@/lib/account';
+import { ACCOUNT_CAPABILITY, type AccountConfig } from './model';
 import { HomeserverClient } from './homeserver-client';
 
 const HOMESERVER = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';

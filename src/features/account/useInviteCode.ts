@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { type InviteStatus, isInviteCode, normalizeInviteCode } from '@/lib/account';
+import { type InviteStatus, isInviteCode, normalizeInviteCode } from './model';
 
 export type CodeState = InviteStatus | 'empty' | 'incomplete' | 'checking';
 

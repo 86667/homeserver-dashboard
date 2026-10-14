@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import './globals.css';
+import '../globals.css';
 import { getPlatform } from '@/lib/server/platform';
 import { PlatformProvider } from '@/components/providers/PlatformProvider';
 

@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PUBKY_RING_URL } from '@/lib/pubky-ring';
 import { cn } from '@/lib/utils';
-import { type CodeState, INVITE_HINTS } from './useInviteCode';
+import { type CodeState, INVITE_HINTS } from '../useInviteCode';
 
 interface StartStepProps {
   /** false: the homeserver lets anyone sign up, so no code field is shown. null: not known, so it is shown. */

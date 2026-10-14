@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AccountConfig, AccountInfo, InviteStatus } from '@/lib/account';
+import type { AccountConfig, AccountInfo, InviteStatus } from '../model';
 import { AccountFlow } from './AccountFlow';
-import { HomeserverClient, type RingRequest } from './homeserver-client';
+import { HomeserverClient, type RingRequest } from '../homeserver-client';
 
 let searchParams = new URLSearchParams();
 vi.mock('next/navigation', () => ({ useSearchParams: () => searchParams }));
-vi.mock('./homeserver-client', () => ({ HomeserverClient: { connect: vi.fn() } }));
+vi.mock('../homeserver-client', () => ({ HomeserverClient: { connect: vi.fn() } }));
 
 const CONFIG: AccountConfig = {
   homeserver: '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo',

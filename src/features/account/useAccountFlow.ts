@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AccountConfig, AccountInfo, InviteStatus } from '@/lib/account';
+import type { AccountConfig, AccountInfo, InviteStatus } from './model';
 import { HomeserverClient, type RingRequestKind } from './homeserver-client';
 import { useInviteCode } from './useInviteCode';
 

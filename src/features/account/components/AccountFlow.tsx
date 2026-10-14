@@ -6,13 +6,13 @@ import { UserRound } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { AccountConfig } from '@/lib/account';
+import type { AccountConfig } from '../model';
 import { PUBKY_RING_URL } from '@/lib/pubky-ring';
 import { AccountDetails } from './AccountDetails';
 import { ErrorPanel } from './ErrorPanel';
-import { describeOutcome } from './outcome';
+import { describeOutcome } from '../outcome';
 import { StartStep } from './StartStep';
-import { useAccountFlow } from './useAccountFlow';
+import { useAccountFlow } from '../useAccountFlow';
 import { WaitingStep } from './WaitingStep';
 
 /**
