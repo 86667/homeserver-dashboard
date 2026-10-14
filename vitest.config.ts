@@ -8,10 +8,10 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     coverage: {
       provider: 'v8',
-      // Measure everything under the API routes, shared libs, hooks, services,
-      // features and the proxy by default. Anything intentionally untested must be listed
+      // Measure everything under the API routes, shared libs, hooks and
+      // services by default. Anything intentionally untested must be listed
       // in `exclude` below with a one-line justification; nothing currently is.
-      include: ['src/app/api/**', 'src/lib/**', 'src/hooks/**', 'src/services/**', 'src/features/**', 'src/proxy.ts'],
+      include: ['src/app/api/**', 'src/lib/**', 'src/hooks/**', 'src/services/**'],
       // Test fixtures, not source: the .pem certs here are not JS/TS and make
       // v8's uncovered-file parser throw a RolldownError, which flips the
       // gate's exit code non-deterministically.

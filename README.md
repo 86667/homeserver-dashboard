@@ -101,32 +101,32 @@ The Dockerfile uses Next.js standalone output for optimal image size and include
 - Non-root user for security
 - Proper handling of server-only environment variables
 
+## Account page
+
+`account/` holds the public page for the homeserver's users: sign-up and sign-in with Pubky Ring. It is a separate app with its own image, sharing only this dashboard's UI primitives and theme; see [account/README.md](account/README.md).
+
 ## Configuration
 
 ### Environment Variables
 
 All variables are server-only (no `NEXT_PUBLIC_*` prefix) and read lazily at request time.
 
-| Variable                  | Description                                                                                                                                                     | Required       | Default                                | What breaks without it                                                             |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | -------------------------------------- | ---------------------------------------------------------------------------------- |
-| `ADMIN_BASE_URL`          | Homeserver admin API base URL                                                                                                                                   | Yes\*          | -                                      | Admin proxy, invites, users, file browser all fail                                 |
-| `ADMIN_TOKEN`             | Admin password/token                                                                                                                                            | Yes\*          | -                                      | Same as above, plus the password reveal in Settings                                |
-| `CLIENT_BASE_URL`         | Homeserver client API base URL                                                                                                                                  | No             | `http://homeserver:6286`               | API explorer's client group proxies to the wrong host                              |
-| `HOMESERVER_PUBLIC_KEY`   | The homeserver's public key; the `/account` page finds the homeserver by it                                                                                     | For `/account` | unset                                  | `/account` says it is not set up                                                   |
-| `AUTH_RELAY`              | HTTP relay the `/account` page's Pubky Ring requests use; must be reachable from visitors' browsers                                                             | No             | the Pubky SDK's relay                  | -                                                                                  |
-| `PUBKY_TESTNET_HOST`      | Development only: `/account` uses a local pubky-testnet on this host instead of mainnet                                                                         | No             | unset                                  | -                                                                                  |
-| `DASHBOARD_MODE`          | Which side this instance serves: unset/`all` both, `admin` the admin dashboard only, `account` the public `/account` page only; any other value closes it (503) | No             | unset (`all`)                          | -                                                                                  |
-| `METRICS_BASE_URL`        | Homeserver metrics base URL                                                                                                                                     | No             | `http://homeserver:6289`               | API explorer's metrics group proxies to the wrong host                             |
-| `HOMESERVER_CONFIG_PATH`  | Path to homeserver `config.toml`                                                                                                                                | No             | `/app/homeserver-data/config.toml`     | Settings config editor, Cloudflare disconnect reset, restart-pending detection     |
-| `HOMESERVER_LOG_PATH`     | Path to homeserver JSON-line log file                                                                                                                           | No             | unset (logs disabled)                  | `/api/logs` answers 503; the Logs tab shows as unavailable                         |
-| `CLOUDFLARE_CONFIG_DIR`   | Cloudflare state dir (token, domain, ...)                                                                                                                       | No             | `/app/cloudflare-config`               | Cloudflare tab reports the feature as unsupported                                  |
-| `CLOUDFLARED_BIN`         | cloudflared binary path                                                                                                                                         | No             | `/usr/local/bin/cloudflared`           | Connect (browser-auth) and Preview (quick tunnel) flows cannot spawn cloudflared   |
-| `CLOUDFLARED_RUNTIME_DIR` | Config dir path as seen by the runtime cloudflared container                                                                                                    | No             | `/etc/cloudflared-config`              | Generated `config.yml` points at the wrong `credentials-file` path                 |
-| `PREVIEW_INSTANT_ORIGIN`  | Origin the instant preview tunnel forwards to                                                                                                                   | No             | `http://homeserver:6286`               | Preview's instant tunnel forwards to the wrong origin                              |
-| `CF_API_BASE`             | Cloudflare API base URL                                                                                                                                         | No             | `https://api.cloudflare.com/client/v4` | Tests/e2e override only; leave unset in production                                 |
-| `ADMIN_PASSWORD_MANAGED`  | Set `true` on managed platforms (Umbrel)                                                                                                                        | No             | unset                                  | When unset, `admin_password` stays editable; Umbrel sets it to protect the pairing |
-| `PLATFORM`                | `umbrel` on the Umbrel app; unset/anything else = standalone                                                                                                    | No             | unset (standalone)                     | See "Standalone vs Umbrel" below                                                   |
-| `PORT` / `HOSTNAME`       | Next.js standalone server binding                                                                                                                               | No             | `8080` / `0.0.0.0` (Dockerfile)        | Server binds elsewhere                                                             |
+| Variable                  | Description                                                  | Required | Default                                | What breaks without it                                                             |
+| ------------------------- | ------------------------------------------------------------ | -------- | -------------------------------------- | ---------------------------------------------------------------------------------- |
+| `ADMIN_BASE_URL`          | Homeserver admin API base URL                                | Yes\*    | -                                      | Admin proxy, invites, users, file browser all fail                                 |
+| `ADMIN_TOKEN`             | Admin password/token                                         | Yes\*    | -                                      | Same as above, plus the password reveal in Settings                                |
+| `CLIENT_BASE_URL`         | Homeserver client API base URL                               | No       | `http://homeserver:6286`               | API explorer's client group proxies to the wrong host                              |
+| `METRICS_BASE_URL`        | Homeserver metrics base URL                                  | No       | `http://homeserver:6289`               | API explorer's metrics group proxies to the wrong host                             |
+| `HOMESERVER_CONFIG_PATH`  | Path to homeserver `config.toml`                             | No       | `/app/homeserver-data/config.toml`     | Settings config editor, Cloudflare disconnect reset, restart-pending detection     |
+| `HOMESERVER_LOG_PATH`     | Path to homeserver JSON-line log file                        | No       | unset (logs disabled)                  | `/api/logs` answers 503; the Logs tab shows as unavailable                         |
+| `CLOUDFLARE_CONFIG_DIR`   | Cloudflare state dir (token, domain, ...)                    | No       | `/app/cloudflare-config`               | Cloudflare tab reports the feature as unsupported                                  |
+| `CLOUDFLARED_BIN`         | cloudflared binary path                                      | No       | `/usr/local/bin/cloudflared`           | Connect (browser-auth) and Preview (quick tunnel) flows cannot spawn cloudflared   |
+| `CLOUDFLARED_RUNTIME_DIR` | Config dir path as seen by the runtime cloudflared container | No       | `/etc/cloudflared-config`              | Generated `config.yml` points at the wrong `credentials-file` path                 |
+| `PREVIEW_INSTANT_ORIGIN`  | Origin the instant preview tunnel forwards to                | No       | `http://homeserver:6286`               | Preview's instant tunnel forwards to the wrong origin                              |
+| `CF_API_BASE`             | Cloudflare API base URL                                      | No       | `https://api.cloudflare.com/client/v4` | Tests/e2e override only; leave unset in production                                 |
+| `ADMIN_PASSWORD_MANAGED`  | Set `true` on managed platforms (Umbrel)                     | No       | unset                                  | When unset, `admin_password` stays editable; Umbrel sets it to protect the pairing |
+| `PLATFORM`                | `umbrel` on the Umbrel app; unset/anything else = standalone | No       | unset (standalone)                     | See "Standalone vs Umbrel" below                                                   |
+| `PORT` / `HOSTNAME`       | Next.js standalone server binding                            | No       | `8080` / `0.0.0.0` (Dockerfile)        | Server binds elsewhere                                                             |
 
 ### Standalone vs Umbrel
 
@@ -134,38 +134,6 @@ The same image serves both deployments; `PLATFORM` selects the experience:
 
 - **`PLATFORM=umbrel`** (set by the Umbrel app): shows the Cloudflare setup tab and flows, umbrelOS backup guidance, and "restart the app from Umbrel" copy.
 - **unset / standalone**: the Cloudflare _setup_ UI and its `/cloudflare-guide` are hidden, and the Cloudflare setup API routes return `404 not_supported` — the dashboard doesn't run the cloudflared containers a standalone deployment lacks, so the tunnel can't be established here. The read-only status views (public address, reachability, the pkarr "Pubky network" check) stay, so if you front the homeserver with your own reverse proxy or tunnel you can still see whether it's reachable and correctly published. Restart copy and the backup note are generic.
-
-### Account page for users
-
-`/account` is the page for the people who use this homeserver. They sign up with [Pubky Ring](https://pubkyring.app/) and an invite code, or sign in to an account they already have, and the page confirms their pubky has an account here. To invite someone, send them `/account?token=<code>`: the page fills in the code and checks it with the homeserver before offering sign-up. On a homeserver with open sign-ups no code is asked for.
-
-It needs `HOMESERVER_PUBLIC_KEY` (the `public_key` the admin `/info` reports). Without it the page says it is not set up. `HOMESERVER_PUBLIC_KEY`, `AUTH_RELAY` and `PUBKY_TESTNET_HOST` are the exception to the server-only rule above: the page hands them to visitors' browsers. None of them is a secret.
-
-**How it works.** The page has no server side beyond reading that config: the visitor's browser talks to the homeserver's public API itself, through the Pubky SDK, which finds the homeserver by its key. So the homeserver sees each visitor's own address and applies its rate limits per visitor, and no admin credential is involved anywhere.
-
-- The invite code check and the "are codes required?" check are the homeserver's public `GET /signup_tokens/{code}`.
-- The page asks Ring to sign the read-only capability `/homeserver-dashboard/account:r`, which is outside the user's storage and grants nothing there. For a sign-up, Ring first creates the keys and registers them on the homeserver with the invite code. Ring returns the signed token through the relay.
-- The browser signs in with the token at this homeserver (`POST /session`), the way any Pubky app would. The sign-in is addressed to this homeserver's key, not wherever the person's own record points, so an account elsewhere is never mistaken for one here. An account answers with a session, which the page signs out again at once; an unknown pubky answers 404. The homeserver checks the token's signature and freshness and accepts each token only once.
-- After a sign-up the page reads the code's status again: a spent code means a new account, a still-unused one means Ring approved with a key that was already signed up here.
-
-The page never sees a private key and forgets everything on reload.
-
-`AUTH_RELAY` is handed to visitors' browsers, which wait on it for Ring's answer, so it must be an address they can reach (never `localhost`), over HTTPS when the page is served over HTTPS.
-
-**Known limits.**
-
-- **Disabled accounts look normal.** The homeserver lets a disabled account sign in, so the page cannot tell, and still says the person has an account.
-- **Sessions can be left open.** The page signs each check's session out again, which needs the homeserver's cookie. When the page is on another site than the homeserver, that cookie is third-party, and browsers that block those (Safari, for one) leave the session open. Serve the page from a sub-domain of the homeserver's domain (e.g. `account.example.com` next to `homeserver.example.com`) to keep it first-party. A session left open grants only the page's capability.
-- **Polling outlives the attempt.** The SDK cannot stop waiting on the relay, so after Cancel an abandoned request keeps polling quietly until the page is closed.
-- **The homeserver's rate limits trust a header.** The homeserver keys its limits on the first `X-Forwarded-For` entry a client sends, so a client talking to it directly can sidestep them. That is upstream behaviour, not something this page adds.
-
-**Running it publicly.** Run a separate instance for the public page with `DASHBOARD_MODE=account`. It then serves only `/account` (and `/api/health`); every admin page and API route answers 404, and `/` goes to `/account`. Give it `HOMESERVER_PUBLIC_KEY` (and optionally `AUTH_RELAY`) and nothing admin: no `ADMIN_TOKEN`, `ADMIN_BASE_URL` or `HOMESERVER_CONFIG_PATH`, and no access to the homeserver's `config.toml`, which holds the admin password. With nothing admin to serve and nothing admin to know, a misconfiguration cannot expose the admin side. The admin instance can run with `DASHBOARD_MODE=admin`. With the mode set, the reverse proxy needs no path rules:
-
-```
-account.example.com {
-    reverse_proxy 127.0.0.1:8081
-}
-```
 
 \* Required to use the real homeserver APIs
 
@@ -185,15 +153,6 @@ account.example.com {
 - **Lucide React** - Icon library
 - **Vitest** - Unit + integration test runner
 - **ESLint / Prettier / Knip** - Repo hygiene tooling
-
-### Code layout: admin and public sides
-
-The app has two sides that share only styling and a few generic helpers:
-
-- **Admin** (`src/app/(admin)`, the API routes in `src/app/api`, and the rest of `src`): the dashboard for the operator, with its own root layout.
-- **Public** (`src/app/(account)` and `src/features/account`): the `/account` page for the homeserver's users, with its own root layout.
-
-ESLint enforces the boundary: the public side may import only `components/ui`, `hooks/useCopyFeedback`, `lib/utils`, `lib/with-timeout` and `lib/pubky-ring` from the rest of the app, and nothing outside the public side may import `features/account`. `DASHBOARD_MODE` (`src/proxy.ts`) keeps each deployed instance to one side.
 
 ### Available Scripts
 

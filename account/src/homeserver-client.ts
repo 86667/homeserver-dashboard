@@ -10,7 +10,7 @@
  */
 import type { AuthToken, Capabilities, Pubky } from '@synonymdev/pubky';
 import { ACCOUNT_CAPABILITY, type AccountConfig, type AccountInfo, type InviteStatus } from './model';
-import { withTimeout } from '@/lib/with-timeout';
+import { withTimeout } from './with-timeout';
 
 type Sdk = typeof import('@synonymdev/pubky');
 

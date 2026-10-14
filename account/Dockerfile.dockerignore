@@ -1,0 +1,13 @@
+# Used instead of the repository's .dockerignore when building with
+# account/Dockerfile: only the account app and what it shares are sent.
+*
+!account
+!src/components/ui
+!src/hooks/useCopyFeedback.ts
+!src/lib/utils.ts
+!src/lib/pubky-ring.ts
+!src/app/theme.css
+!public
+account/node_modules
+account/dist
+**/*.test.*

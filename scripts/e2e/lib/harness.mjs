@@ -217,8 +217,6 @@ export async function startDashboard({
   // Default to the Umbrel experience so every existing spec keeps exercising
   // the Cloudflare flows; the standalone spec overrides this to 'standalone'.
   platform = 'umbrel',
-  // Extra environment for the dev server, on top of the fake environment.
-  env: extraEnv = {},
 } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'hsdash-e2e-'));
   const configDir = path.join(root, 'cloudflare-config');
@@ -269,7 +267,6 @@ export async function startDashboard({
       CF_API_BASE: cf.url,
       PKARR_RELAYS: pkarrRelay.url,
       PLATFORM: platform,
-      ...extraEnv,
     },
   });
   closeSync(out);

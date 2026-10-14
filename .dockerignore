@@ -12,6 +12,9 @@
 .github
 .claude
 
+# The account page is its own app and image (account/Dockerfile)
+account
+
 # Dependencies
 node_modules
 npm-debug.log*

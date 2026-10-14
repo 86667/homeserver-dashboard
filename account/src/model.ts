@@ -1,7 +1,4 @@
-/**
- * What the public account page (/account) and its server-side config share.
- * Safe to import from the browser: nothing here touches the server.
- */
+/** The account page's shared types, and the invite code format. */
 
 /**
  * The capability the account page asks Pubky Ring to sign. An AuthToken has
@@ -15,7 +12,7 @@ export const ACCOUNT_CAPABILITY = '/homeserver-dashboard/account:r';
 /** The homeserver's answer about an invite code, as the page shows it. */
 export type InviteStatus = 'valid' | 'used' | 'unknown' | 'not_required' | 'rate_limited' | 'error';
 
-/** What the account page needs to talk to the homeserver, read from the server's environment. */
+/** What the account page needs to talk to the homeserver, from config.json. */
 export type AccountConfig = {
   /** The homeserver's public key (z-base-32). */
   homeserver: string;

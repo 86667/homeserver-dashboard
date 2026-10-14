@@ -9,9 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `DASHBOARD_MODE` keeps an instance to one side of the dashboard: `account` serves only the public `/account` page (every admin page and API route answers 404), `admin` only the admin dashboard, unset both. An unknown value closes the instance rather than falling back to serving everything.
-- The admin and public sides are separate in the code: their own route groups and root layouts, the public side in `src/features/account`, and a lint rule that keeps the public side from importing admin code.
-- An account page for users at `/account`. People sign up on this homeserver by scanning a QR code with Pubky Ring, with an invite code typed in or carried by an invite link (`/account?token=<code>`), or sign in to an account they already have; the page confirms their pubky has an account here. The visitor's browser talks to the homeserver's public API itself, so the homeserver's rate limits apply per visitor and no admin credential is involved. The page can run as a separate public instance with no admin credentials; the README shows how. It needs the new `HOMESERVER_PUBLIC_KEY` setting.
+- An account page for the homeserver's users, as its own app and Docker image (`account/`). People sign up by scanning a QR code with Pubky Ring, with an invite code typed in or carried by an invite link (`?token=<code>`), or sign in to an account they already have; the page confirms their pubky has an account here. It is static files with no server side and no admin credential: the visitor's browser talks to the homeserver's public API itself. It shares the dashboard's UI primitives and theme (now in `src/app/theme.css`). See `account/README.md`.
 
 ## [0.1.29]
 

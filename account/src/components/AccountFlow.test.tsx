@@ -4,8 +4,6 @@ import type { AccountConfig, AccountInfo, InviteStatus } from '../model';
 import { AccountFlow } from './AccountFlow';
 import { HomeserverClient, type RingRequest } from '../homeserver-client';
 
-let searchParams = new URLSearchParams();
-vi.mock('next/navigation', () => ({ useSearchParams: () => searchParams }));
 vi.mock('../homeserver-client', () => ({ HomeserverClient: { connect: vi.fn() } }));
 
 const CONFIG: AccountConfig = {
@@ -40,7 +38,6 @@ function homeserver({
 }
 
 beforeEach(() => {
-  searchParams = new URLSearchParams();
   vi.mocked(HomeserverClient.connect).mockReset();
 });
 
@@ -50,10 +47,9 @@ afterEach(() => {
 
 describe('AccountFlow sign-up', () => {
   it('signs up with the code from an invite link and welcomes the new account', async () => {
-    searchParams = new URLSearchParams({ token: CODE.toLowerCase() });
     const client = homeserver({ inviteStatus: (asked) => (asked === 0 ? 'valid' : 'used') });
 
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode={CODE.toLowerCase()} />);
     const input = (await screen.findByLabelText('Invite code')) as HTMLInputElement;
     expect(input.value).toBe(CODE);
     await screen.findByText('Invite code accepted.');
@@ -67,7 +63,7 @@ describe('AccountFlow sign-up', () => {
 
   it('keeps sign-up disabled until the code is known to be valid', async () => {
     homeserver({ inviteStatus: () => 'used' });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     const input = await screen.findByLabelText('Invite code');
     const signUp = screen.getByTestId('account-signup') as HTMLButtonElement;
     expect(signUp.disabled).toBe(true);
@@ -81,9 +77,8 @@ describe('AccountFlow sign-up', () => {
   });
 
   it('checks the code again on returning to the start, since a sign-up may have spent it', async () => {
-    searchParams = new URLSearchParams({ token: CODE });
     homeserver({ inviteStatus: (asked) => (asked === 0 ? 'valid' : 'used') });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode={CODE} />);
     await screen.findByText('Invite code accepted.');
     fireEvent.click(screen.getByTestId('account-signup'));
     await screen.findByTestId('account-details');
@@ -93,7 +88,7 @@ describe('AccountFlow sign-up', () => {
 
   it('offers sign-up without a code on a homeserver that needs none', async () => {
     const client = homeserver({ inviteRequired: false });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     const signUp = (await screen.findByTestId('account-signup')) as HTMLButtonElement;
     expect(screen.queryByLabelText('Invite code')).toBeNull();
     expect(signUp.disabled).toBe(false);
@@ -104,7 +99,7 @@ describe('AccountFlow sign-up', () => {
 
   it('lets a visitor sign up without a code when the homeserver only says so in answer to one', async () => {
     const client = homeserver({ inviteRequired: null, inviteStatus: () => 'not_required' });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     fireEvent.change(await screen.findByLabelText('Invite code'), { target: { value: CODE } });
     await screen.findByText(/does not need an invite code/);
     const signUp = screen.getByTestId('account-signup') as HTMLButtonElement;
@@ -116,7 +111,7 @@ describe('AccountFlow sign-up', () => {
 
   it('explains a sign-up that left no account behind', async () => {
     homeserver({ inviteRequired: false, account: () => Promise.resolve({ pubky: ALICE, hasAccount: false }) });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     fireEvent.click(await screen.findByTestId('account-signup'));
     expect((await screen.findByTestId('account-missing')).textContent).toMatch(/did not go through/);
   });
@@ -124,9 +119,8 @@ describe('AccountFlow sign-up', () => {
 
 describe('AccountFlow sign-in', () => {
   it('signs in without sending a code, and says welcome back', async () => {
-    searchParams = new URLSearchParams({ token: CODE });
     const client = homeserver();
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode={CODE} />);
     fireEvent.click(await screen.findByTestId('account-signin'));
     await screen.findByText('Welcome back');
     expect(client.startRequest).toHaveBeenCalledWith('signin', null);
@@ -134,7 +128,7 @@ describe('AccountFlow sign-in', () => {
 
   it('explains when the pubky has no account here', async () => {
     homeserver({ account: () => Promise.resolve({ pubky: ALICE, hasAccount: false }) });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     fireEvent.click(await screen.findByTestId('account-signin'));
     await screen.findByTestId('account-missing');
     expect(screen.getByText('No account on this homeserver')).toBeTruthy();
@@ -144,7 +138,7 @@ describe('AccountFlow sign-in', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     homeserver();
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     fireEvent.click(await screen.findByTestId('account-signin'));
     fireEvent.click(await screen.findByRole('button', { name: 'Copy pubky' }));
     await screen.findByRole('button', { name: 'Copied pubky' });
@@ -157,7 +151,7 @@ describe('AccountFlow waiting and failures', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     homeserver({ account: () => new Promise(() => {}) });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     fireEvent.click(await screen.findByTestId('account-signin'));
     await screen.findByTestId('account-qr');
     expect(screen.getByRole('link', { name: 'Open in Pubky Ring on this device' }).getAttribute('href')).toBe(
@@ -172,7 +166,7 @@ describe('AccountFlow waiting and failures', () => {
 
   it('reports a failed request with a way to try again', async () => {
     homeserver({ account: () => Promise.reject(new Error('AuthToken already used')) });
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     fireEvent.click(await screen.findByTestId('account-signin'));
     expect((await screen.findByTestId('account-failed')).textContent).toContain('AuthToken already used');
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -181,7 +175,7 @@ describe('AccountFlow waiting and failures', () => {
 
   it('says when the homeserver cannot be reached, and retries', async () => {
     vi.mocked(HomeserverClient.connect).mockRejectedValueOnce(new Error('Failed to load the Pubky SDK'));
-    render(<AccountFlow config={CONFIG} />);
+    render(<AccountFlow config={CONFIG} initialCode="" />);
     expect((await screen.findByTestId('account-unavailable')).textContent).toContain('Failed to load the Pubky SDK');
     homeserver();
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -189,7 +183,7 @@ describe('AccountFlow waiting and failures', () => {
   });
 
   it('says the page is not set up without a config, and connects to nothing', () => {
-    render(<AccountFlow config={null} />);
+    render(<AccountFlow config={null} initialCode="" />);
     expect(screen.getByTestId('account-not-set-up').textContent).toContain('not set up');
     expect(HomeserverClient.connect).not.toHaveBeenCalled();
   });

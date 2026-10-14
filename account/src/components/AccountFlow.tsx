@@ -1,7 +1,6 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { UserRound } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,21 +14,26 @@ import { StartStep } from './StartStep';
 import { useAccountFlow } from '../useAccountFlow';
 import { WaitingStep } from './WaitingStep';
 
-/**
- * The public account page: sign up on this homeserver with Pubky Ring and an
- * invite code (from `?token=` or typed in), or sign in to an existing
- * account. Nothing is stored; reloading signs out. `config` null: the page is
- * not set up (no homeserver key configured).
- */
-export function AccountFlow({ config }: { config: AccountConfig | null }) {
-  return <AccountPage>{config ? <Flow config={config} /> : <NotSetUp />}</AccountPage>;
+interface AccountFlowProps {
+  /** null: the page is not set up (no usable homeserver key configured). */
+  config: AccountConfig | null;
+  /** The invite code from the page's link, if any. */
+  initialCode: string;
 }
 
-function Flow({ config }: { config: AccountConfig }) {
-  const searchParams = useSearchParams();
+/**
+ * The public account page: sign up on this homeserver with Pubky Ring and an
+ * invite code (from the link or typed in), or sign in to an existing account.
+ * Nothing is stored; reloading signs out.
+ */
+export function AccountFlow({ config, initialCode }: AccountFlowProps) {
+  return <AccountPage>{config ? <Flow config={config} initialCode={initialCode} /> : <NotSetUp />}</AccountPage>;
+}
+
+function Flow({ config, initialCode }: { config: AccountConfig; initialCode: string }) {
   const { step, invite, inviteRequired, canSignUp, start, backToStart, retryConnect } = useAccountFlow(
     config,
-    searchParams.get('token') ?? '',
+    initialCode,
   );
 
   switch (step.name) {
