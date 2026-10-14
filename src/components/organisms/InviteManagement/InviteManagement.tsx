@@ -14,6 +14,7 @@ import { Info, X, CircleCheckBig, RefreshCw, ChevronDown, ChevronUp, Plus } from
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { usePolling } from '@/hooks/usePolling';
 import { QRCodeSVG } from 'qrcode.react';
+import { PUBKY_RING_URL } from '@/lib/pubky-ring';
 import {
   QUOTA_FIELDS,
   type QuotaText,
@@ -57,7 +58,7 @@ function PubkyRingAssist() {
     <p className="text-xs text-muted-foreground">
       Don&apos;t have Pubky Ring yet? Get it at{' '}
       <a
-        href="https://pubkyring.app/"
+        href={PUBKY_RING_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="text-brand underline-offset-2 hover:underline"

@@ -55,6 +55,11 @@ export default [
       react: { version: 'detect' },
     },
   },
+  // The account page (account/) is a Vite app, not a Next.js one.
+  {
+    files: ['account/**'],
+    rules: Object.fromEntries(Object.keys(pluginNext.rules).map((rule) => [`@next/next/${rule}`, 'off'])),
+  },
 ];
 
 

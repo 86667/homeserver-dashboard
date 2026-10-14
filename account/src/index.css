@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '../../src/app/theme.css';
+
+/* The shared UI primitives live outside this app; Tailwind must see their classes. */
+@source '../../src/components/ui';
