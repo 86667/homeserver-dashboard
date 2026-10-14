@@ -28,6 +28,15 @@ const nextConfig = {
       },
     ];
   },
+  // The Pubky SDK is used in the browser only (the admin sign-in screen). Its
+  // Node build replaces the process-wide `fetch` with a cookie-jar wrapper as
+  // soon as it is loaded, which would make every request this server proxies
+  // share one cookie jar. Leave it out of the server build altogether; the
+  // server verifies sign-in tokens itself (src/lib/server/auth/ring-token.ts).
+  webpack: (config, { isServer }) => {
+    if (isServer) config.resolve.alias['@synonymdev/pubky'] = false;
+    return config;
+  },
 };
 
 export default nextConfig;
