@@ -101,6 +101,10 @@ The Dockerfile uses Next.js standalone output for optimal image size and include
 - Non-root user for security
 - Proper handling of server-only environment variables
 
+## Account page
+
+`account/` holds the public page for the homeserver's users: sign-up and sign-in with Pubky Ring. It is a separate app with its own image, sharing only this dashboard's UI primitives and theme; see [account/README.md](account/README.md).
+
 ## Configuration
 
 ### Environment Variables

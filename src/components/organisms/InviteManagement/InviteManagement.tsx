@@ -11,6 +11,7 @@ import { Info, Copy, Check, QrCode, X, Gift, Plus, CircleCheckBig, RefreshCw } f
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { usePolling } from '@/hooks/usePolling';
 import { QRCodeSVG } from 'qrcode.react';
+import { PUBKY_RING_URL } from '@/lib/pubky-ring';
 
 /** How often the signup-code stats are re-read while a QR is on screen. */
 const WATCH_POLL_MS = 3000;
@@ -38,7 +39,7 @@ function PubkyRingAssist() {
     <p className="text-xs text-muted-foreground">
       Don&apos;t have Pubky Ring yet? Get it at{' '}
       <a
-        href="https://pubkyring.app/"
+        href={PUBKY_RING_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="text-brand underline-offset-2 hover:underline"

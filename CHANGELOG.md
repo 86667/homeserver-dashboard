@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- An account page for the homeserver's users, as its own app and Docker image (`account/`). People sign up by scanning a QR code with Pubky Ring, with an invite code typed in or carried by an invite link (`?token=<code>`), or sign in to an account they already have; the page confirms their pubky has an account here. It is static files with no server side and no admin credential: the visitor's browser talks to the homeserver's public API itself. It shares the dashboard's UI primitives and theme (now in `src/app/theme.css`). See `account/README.md`.
+
 ## [0.1.29]
 
 ### Fixed

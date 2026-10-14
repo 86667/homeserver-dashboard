@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronUp, Circle, CircleCheckBig, RefreshCw, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PUBKY_RING_URL } from '@/lib/pubky-ring';
 
 /** A checklist step is done, still being determined (async signal in flight),
  * or outstanding. 'checking' suppresses the call-to-action so the user is not
@@ -256,7 +257,7 @@ export function GetStartedChecklist({
           <StepRow status={signupDone ? 'done' : 'todo'} testId="setup-step-signup" title="Sign up from Pubky Ring">
             Install Pubky Ring on your phone (get it at{' '}
             <a
-              href="https://pubkyring.app/"
+              href={PUBKY_RING_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="text-brand underline-offset-2 hover:underline"

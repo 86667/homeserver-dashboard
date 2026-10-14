@@ -76,3 +76,58 @@ jobs:
           tags: homeserver-dashboard:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # The account page (account/) is its own app with its own dependencies.
+  # Lint and format are covered by the quality job above.
+  account:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: account
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: account/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  account-docker:
+    runs-on: ubuntu-latest
+    needs: account
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Built from the repository root: the page shares the admin app's UI primitives.
+      - name: Build image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: account/Dockerfile
+          push: false
+          platforms: linux/amd64,linux/arm64
+          tags: homeserver-account:ci
+          cache-from: type=gha,scope=account
+          cache-to: type=gha,mode=max,scope=account
