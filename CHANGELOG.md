@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- An account page for users at `/account`. People sign up on this homeserver by scanning a QR code with Pubky Ring, with an invite code typed in or carried by an invite link (`/account?token=<code>`), or sign in to an account they already have; the page confirms their pubky has an account here. The visitor's browser talks to the homeserver's public API itself, so the homeserver's rate limits apply per visitor and no admin credential is involved. The page can run as a separate public instance with no admin credentials; the README shows how. It needs the new `HOMESERVER_PUBLIC_KEY` setting.
+
 ## [0.1.29]
 
 ### Fixed

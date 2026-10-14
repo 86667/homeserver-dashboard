@@ -19,6 +19,8 @@ const SPECS = [
   'connect-authorized.spec.mjs',
   'preview-supersede.spec.mjs',
   'standalone.spec.mjs',
+  // Needs a running pubky-testnet; skips without one.
+  'account.spec.mjs',
 ];
 
 const filters = process.argv.slice(2);
