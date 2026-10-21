@@ -10,11 +10,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useSignupTokens } from '@/hooks/admin';
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { formatUtcTimestamp, shortPubky } from '@/lib/format';
+import { inviteLink } from '@/lib/invite-link';
 import { describeLimits } from '@/lib/quota-form';
 import { cn } from '@/lib/utils';
 import type { SignupToken, SignupTokenState, UserQuota } from '@/services/admin/admin.types';
 
 export interface SignupTokenListProps {
+  /** The public account page (ACCOUNT_PAGE_URL); with it, unused codes get a "copy sign-up link" action. */
+  accountPageUrl: string | null;
   /** Bump to reload, e.g. after an invite was created. */
   refreshKey?: number;
 }
@@ -47,7 +50,7 @@ function TokenLimits({ quota }: { quota: UserQuota }) {
  * pubky that signed up with them: on a homeserver that requires codes, that
  * is the list of who joined.
  */
-export function SignupTokenList({ refreshKey = 0 }: SignupTokenListProps) {
+export function SignupTokenList({ accountPageUrl, refreshKey = 0 }: SignupTokenListProps) {
   const [filter, setFilter] = useState<SignupTokenState>('unused');
   const { items, isTruncated, isLoading, error, refetch } = useSignupTokens(filter, refreshKey);
   const { copiedKey, copy } = useCopyFeedback();
@@ -60,8 +63,8 @@ export function SignupTokenList({ refreshKey = 0 }: SignupTokenListProps) {
   }, [items]);
   const reportsLimits = items.some((item) => item.quota !== undefined);
 
-  const copyButton = (value: string, key: string, label: string) => (
-    <CopyButton label={label} copied={copiedKey === key} onCopy={() => void copy(value, key)} />
+  const copyButton = (value: string, key: string, label: string, icon: 'copy' | 'link' = 'copy') => (
+    <CopyButton label={label} copied={copiedKey === key} onCopy={() => void copy(value, key)} icon={icon} />
   );
 
   const row = (item: SignupToken) => (
@@ -89,9 +92,15 @@ export function SignupTokenList({ refreshKey = 0 }: SignupTokenListProps) {
           </p>
         </div>
         <div className="flex shrink-0 gap-1">
-          {item.used_by
-            ? copyButton(item.used_by, `pubky-${item.token}`, 'Copy pubky')
-            : copyButton(item.token, `code-${item.token}`, 'Copy code')}
+          {item.used_by ? (
+            copyButton(item.used_by, `pubky-${item.token}`, 'Copy pubky')
+          ) : (
+            <>
+              {copyButton(item.token, `code-${item.token}`, 'Copy code')}
+              {accountPageUrl &&
+                copyButton(inviteLink(accountPageUrl, item.token), `link-${item.token}`, 'Copy sign-up link', 'link')}
+            </>
+          )}
           {item.quota !== undefined && (
             <Button
               variant="ghost"
@@ -160,6 +169,13 @@ export function SignupTokenList({ refreshKey = 0 }: SignupTokenListProps) {
             <AlertTitle>Could not load invite codes</AlertTitle>
             <AlertDescription className="text-xs">{error.message}</AlertDescription>
           </Alert>
+        )}
+
+        {filter === 'unused' && !accountPageUrl && (
+          <p className="text-xs text-muted-foreground/70" data-testid="account-page-hint">
+            To hand out sign-up links instead of bare codes, set <code>ACCOUNT_PAGE_URL</code> to the public address of
+            the account page.
+          </p>
         )}
 
         {!isLoading && isTruncated && (

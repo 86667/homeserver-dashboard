@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdminInfo, useAdminActions } from '@/hooks/admin';
+import { useAccountPageUrl } from '@/hooks/useAccountPageUrl';
 import { usePlatform } from '@/components/providers/PlatformProvider';
 import { DashboardNavbar } from '@/components/organisms/DashboardNavbar';
 import { DashboardOverview, useSetupGuideDismissal } from '@/components/organisms/DashboardOverview';
@@ -69,6 +70,7 @@ function TabUnavailableNotice() {
 
 export default function DashboardPage() {
   const platform = usePlatform();
+  const accountPageUrl = useAccountPageUrl();
   const {
     data: info,
     isLoading: infoLoading,
@@ -382,10 +384,13 @@ export default function DashboardPage() {
                 isStatsLoading={infoLoading}
                 homeserverPubkey={info?.public_key ?? info?.pubkey}
                 onRefreshStats={refreshInfo}
+                accountPageUrl={accountPageUrl}
                 homeserverDefaults={homeserverDefaults}
                 codesListed={hasSignupTokenList}
               />
-              {hasSignupTokenList && <SignupTokenList refreshKey={signupTokensRefreshKey} />}
+              {hasSignupTokenList && (
+                <SignupTokenList accountPageUrl={accountPageUrl} refreshKey={signupTokensRefreshKey} />
+              )}
             </TabsContent>
 
             <TabsContent value="files" className="space-y-4">

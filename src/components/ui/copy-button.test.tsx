@@ -14,4 +14,9 @@ describe('CopyButton', () => {
     render(<CopyButton label="Copy code" copied onCopy={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Copied: Copy code' }).getAttribute('title')).toBe('Copied');
   });
+
+  it('keeps its name with the link icon', () => {
+    render(<CopyButton label="Copy sign-up link" copied={false} onCopy={vi.fn()} icon="link" />);
+    expect(screen.getByRole('button', { name: 'Copy sign-up link' })).toBeTruthy();
+  });
 });

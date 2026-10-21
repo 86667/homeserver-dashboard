@@ -46,14 +46,28 @@ afterEach(() => {
 
 describe('SignupTokenList', () => {
   it('lists unused codes, each with a copy-code action', async () => {
-    render(<SignupTokenList />);
+    render(<SignupTokenList accountPageUrl={null} />);
     await screen.findByText(UNUSED.token);
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/admin/signup_tokens?state=unused&limit=1000');
     expect(screen.getByRole('button', { name: 'Copy code' })).toBeTruthy();
   });
 
+  it('adds a copy-sign-up-link action when the account page address is configured', async () => {
+    render(<SignupTokenList accountPageUrl="https://dashboard.example.com" />);
+    await screen.findByText(UNUSED.token);
+    expect(screen.getByRole('button', { name: 'Copy sign-up link' })).toBeTruthy();
+    expect(screen.queryByTestId('account-page-hint')).toBeNull();
+  });
+
+  it('without that address, offers codes only and says how to get links', async () => {
+    render(<SignupTokenList accountPageUrl={null} />);
+    await screen.findByText(UNUSED.token);
+    expect(screen.queryByRole('button', { name: 'Copy sign-up link' })).toBeNull();
+    expect(screen.getByTestId('account-page-hint').textContent).toContain('ACCOUNT_PAGE_URL');
+  });
+
   it('shows who used a code, with their pubky to copy', async () => {
-    render(<SignupTokenList />);
+    render(<SignupTokenList accountPageUrl={null} />);
     await screen.findByText(UNUSED.token);
     fireEvent.click(screen.getByRole('button', { name: 'Used' }));
     const row = await screen.findByText(USED.token);
@@ -64,7 +78,7 @@ describe('SignupTokenList', () => {
 
   it('shows the newest ten, and ten more on request, inside a scrolling box', async () => {
     unused = MANY;
-    render(<SignupTokenList />);
+    render(<SignupTokenList accountPageUrl={null} />);
     await screen.findByText('C011-TEST-CODE');
     const rows = () => screen.getAllByTestId('signup-token-row').map((r) => r.querySelector('code')?.textContent);
     expect(rows()).toHaveLength(10);
@@ -83,7 +97,7 @@ describe('SignupTokenList', () => {
       { ...UNUSED, quota: { storage_quota_mb: 500, allowed_write_paths: ['/pub/site/'] } },
       { ...UNUSED, token: 'GGGG-HHHH-JJJJ', created_at: '2026-10-01T10:00:00', quota: {} },
     ];
-    render(<SignupTokenList />);
+    render(<SignupTokenList accountPageUrl={null} />);
     await screen.findByText(UNUSED.token);
     expect(screen.queryByTestId('limits-not-reported')).toBeNull();
     const [first, second] = screen.getAllByRole('button', { name: 'Show limits' });
@@ -95,7 +109,7 @@ describe('SignupTokenList', () => {
     await waitFor(() => expect(screen.getByTestId('signup-token-limits').textContent).toContain('default limits'));
 
     unused = [UNUSED];
-    render(<SignupTokenList refreshKey={1} />);
+    render(<SignupTokenList accountPageUrl={null} refreshKey={1} />);
     await waitFor(() => expect(screen.getByTestId('limits-not-reported')).toBeTruthy());
   });
 
@@ -106,26 +120,26 @@ describe('SignupTokenList', () => {
       const items = Array.from({ length: 1000 }, (_, i) => ({ ...UNUSED, token: `P${page}-${i}` }));
       return json({ items, next_cursor: `P${page}-999` });
     });
-    render(<SignupTokenList />);
+    render(<SignupTokenList accountPageUrl={null} />);
     expect((await screen.findByTestId('codes-truncated')).textContent).toContain('more than 5000 unused codes');
   });
 
   it('says nothing of the kind for a list read in full', async () => {
-    render(<SignupTokenList />);
+    render(<SignupTokenList accountPageUrl={null} />);
     await screen.findByText(UNUSED.token);
     expect(screen.queryByTestId('codes-truncated')).toBeNull();
   });
 
   it('reloads when refreshKey changes', async () => {
-    const { rerender } = render(<SignupTokenList refreshKey={0} />);
+    const { rerender } = render(<SignupTokenList accountPageUrl={null} refreshKey={0} />);
     await screen.findByText(UNUSED.token);
-    rerender(<SignupTokenList refreshKey={1} />);
+    rerender(<SignupTokenList accountPageUrl={null} refreshKey={1} />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
   it('shows a load failure', async () => {
     fetchMock.mockResolvedValue(new Response('db down', { status: 500 }));
-    render(<SignupTokenList />);
+    render(<SignupTokenList accountPageUrl={null} />);
     expect((await screen.findByText('Could not load invite codes')).textContent).toBeTruthy();
     expect(screen.getByText('db down')).toBeTruthy();
   });

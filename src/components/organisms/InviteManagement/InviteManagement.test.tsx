@@ -122,6 +122,31 @@ describe('InviteManagement new invite panel', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(EXPECTED_URL));
   });
 
+  it('adds a sign-up link to the account page when its address is configured', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(
+      <InviteManagement
+        onGenerate={generate()}
+        homeserverPubkey={HOMESERVER}
+        accountPageUrl="https://dashboard.example.com/"
+      />,
+    );
+    await create();
+    const link = `https://dashboard.example.com/?token=${INVITE}`;
+    expect(screen.getByTestId('invite-account-link').textContent).toContain(link);
+    expect(screen.getByText(EXPECTED_URL)).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Copy sign-up link'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(link));
+  });
+
+  it('shows no sign-up link when no account page address is configured', async () => {
+    render(<InviteManagement onGenerate={generate()} homeserverPubkey={HOMESERVER} />);
+    await create();
+    expect(screen.queryByTestId('invite-account-link')).toBeNull();
+    expect(screen.getByText(EXPECTED_URL)).toBeTruthy();
+  });
+
   it('can be dismissed', async () => {
     render(<InviteManagement onGenerate={generate()} homeserverPubkey={HOMESERVER} />);
     await create();

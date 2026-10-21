@@ -14,6 +14,7 @@ import { Info, X, CircleCheckBig, RefreshCw, ChevronDown, ChevronUp, Plus } from
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { usePolling } from '@/hooks/usePolling';
 import { QRCodeSVG } from 'qrcode.react';
+import { inviteLink } from '@/lib/invite-link';
 import { PUBKY_RING_URL } from '@/lib/pubky-ring';
 import {
   QUOTA_FIELDS,
@@ -43,6 +44,8 @@ export interface InviteManagementProps {
   homeserverPubkey?: string;
   /** Background re-read of the signup-code stats, polled while a new invite is shown. */
   onRefreshStats?: () => void | Promise<void>;
+  /** The public account page (ACCOUNT_PAGE_URL). With it, each invite also gets a link that opens in any browser. */
+  accountPageUrl?: string | null;
   /** The homeserver's default limits (from its config.toml), shown in the empty fields; null when not readable. */
   homeserverDefaults?: UserQuota | null;
   /** Whether the page lists the homeserver's codes below this card; without the list a code cannot be shown again. */
@@ -79,6 +82,7 @@ export function InviteManagement({
   isStatsLoading,
   homeserverPubkey,
   onRefreshStats,
+  accountPageUrl,
   homeserverDefaults,
   codesListed,
 }: InviteManagementProps) {
@@ -330,6 +334,20 @@ export function InviteManagement({
                       <span className="text-xs text-muted-foreground">QR code</span>
                     </div>
                     <div className="min-w-0 flex-1">
+                      {accountPageUrl && (
+                        <div className="mb-3" data-testid="invite-account-link">
+                          <p className="mb-1 text-xs text-muted-foreground">Sign-up link (opens in any browser)</p>
+                          <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                            <code className="min-w-0 flex-1 font-mono text-xs break-all text-foreground">
+                              {inviteLink(accountPageUrl, created.token)}
+                            </code>
+                            {copyButton(inviteLink(accountPageUrl, created.token), 'link', 'Copy sign-up link')}
+                          </div>
+                          <p className="mt-2 mb-1 text-xs text-muted-foreground">
+                            Pubky Ring link (what the QR code holds)
+                          </p>
+                        </div>
+                      )}
                       <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
                         <code className="min-w-0 flex-1 font-mono text-xs break-all text-foreground">{signupUrl}</code>
                         {copyButton(signupUrl, 'url', 'Copy invite URL')}

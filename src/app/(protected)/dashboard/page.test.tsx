@@ -21,6 +21,7 @@ vi.mock('@/hooks/admin', () => ({
   useAdminActions: () => ({ generateInvite, disableUser, enableUser, generateInviteError: null }),
 }));
 vi.mock('@/components/providers/PlatformProvider', () => ({ usePlatform: () => 'generic' }));
+vi.mock('@/hooks/useAccountPageUrl', () => ({ useAccountPageUrl: () => 'https://dashboard.example.com/' }));
 
 // The page is tested for what it hands the Invites and Users tabs; their
 // cards and every other section are stood in for.
@@ -34,7 +35,11 @@ vi.mock('@/components/organisms/InviteManagement', () => ({
   },
 }));
 vi.mock('@/components/organisms/SignupTokenList', () => ({
-  SignupTokenList: ({ refreshKey }: { refreshKey: number }) => <div data-testid="token-list">{refreshKey}</div>,
+  SignupTokenList: ({ accountPageUrl, refreshKey }: { accountPageUrl: string | null; refreshKey: number }) => (
+    <div data-testid="token-list" data-account-page={accountPageUrl}>
+      {refreshKey}
+    </div>
+  ),
 }));
 vi.mock('@/components/organisms/DashboardOverview', () => ({
   DashboardOverview: () => null,
@@ -105,6 +110,14 @@ describe('DashboardPage invites', () => {
     render(<DashboardPage />);
     await screen.findByTestId('token-list');
     expect(inviteProps.codesListed).toBe(true);
+  });
+
+  it('hands the account page address to the invite form and the code list', async () => {
+    stubProbes();
+    render(<DashboardPage />);
+    const list = await screen.findByTestId('token-list');
+    expect(list.getAttribute('data-account-page')).toBe('https://dashboard.example.com/');
+    expect(inviteProps.accountPageUrl).toBe('https://dashboard.example.com/');
   });
 
   it('shows no list on a homeserver without the route', async () => {

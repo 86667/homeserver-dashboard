@@ -1,4 +1,4 @@
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface CopyButtonProps {
@@ -7,10 +7,13 @@ interface CopyButtonProps {
   /** Whether this button's value was just copied; shows a tick in place of the copy icon. */
   copied: boolean;
   onCopy: () => void;
+  /** `link` for a button that copies an address, beside one that copies the bare value. */
+  icon?: 'copy' | 'link';
 }
 
 /** An icon button that copies a value and confirms it. Pair it with `useCopyFeedback`. */
-export function CopyButton({ label, copied, onCopy }: CopyButtonProps) {
+export function CopyButton({ label, copied, onCopy, icon = 'copy' }: CopyButtonProps) {
+  const Icon = icon === 'link' ? Link2 : Copy;
   return (
     <Button
       variant={copied ? 'secondary' : 'ghost'}
@@ -20,7 +23,7 @@ export function CopyButton({ label, copied, onCopy }: CopyButtonProps) {
       title={copied ? 'Copied' : label}
       aria-label={copied ? `Copied: ${label}` : label}
     >
-      {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+      {copied ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
     </Button>
   );
 }
