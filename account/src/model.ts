@@ -70,3 +70,41 @@ export function normalizeInviteCode(raw: string): string {
 export function isInviteCode(code: string): boolean {
   return INVITE_CODE.test(code);
 }
+
+/** One line of the homeserver's public event feed: a public file written or removed. */
+export type FeedEvent = {
+  kind: 'PUT' | 'DEL';
+  /** The file's `pubky://` address. */
+  url: string;
+  /** Whose file it is (z-base-32). */
+  pubky: string;
+  /** Its path under `/pub/`. */
+  path: string;
+  /** The first folder under `/pub/`: by convention the app that wrote the file. */
+  app: string;
+};
+
+/** What the homeserver says about itself on `GET /info`, and where it was reached. */
+export type HomeserverInfo = {
+  features: string[];
+  /** The https address the homeserver's key resolved to, e.g. `https://homeserver.example.com`; null when unknown. */
+  address: string | null;
+};
+
+/** One DNS record from a homeserver's signed record on the Pubky network, as text. */
+export type DnsRecord = {
+  /** Relative to the key's own name: `@` for the key itself, else e.g. `_pubky`. */
+  name: string;
+  /** `A`, `AAAA`, `TXT`, `HTTPS`, `SVCB`, `CNAME`, or `TYPE<n>` for others. */
+  type: string;
+  value: string;
+  /** Seconds the record may be cached. */
+  ttl: number;
+};
+
+/** A key's signed record (pkarr) as a relay serves it. */
+export type SignedRecord = {
+  /** When the key's owner signed it. */
+  publishedAt: Date;
+  records: DnsRecord[];
+};

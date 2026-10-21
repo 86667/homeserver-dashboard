@@ -27,7 +27,7 @@ The image serves the page on port 8080 with nginx, as an unprivileged user, with
 
 ## How it works
 
-The page has three tabs, like the admin dashboard: **Account**, **Activity** and **Homeserver**. Only the first is built so far; the other two say what they will show.
+The page is laid out like the admin dashboard (same width, header with a sign-in pill, or a sign-out pill once signed in, footer) with three tabs: **Account**, **Activity** and **Homeserver**. Each tab's data is read when it is first opened.
 
 - The invite code check and the "are codes required?" check are the homeserver's public `GET /signup_tokens/{code}`.
 - The page asks Ring to sign the read-only capability `/homeserver-dashboard/account:r`, which is outside the user's storage and grants nothing there. For a sign-up, Ring first creates the keys and registers them on the homeserver with the invite code. Ring returns the signed token through the relay.
@@ -35,12 +35,10 @@ The page has three tabs, like the admin dashboard: **Account**, **Activity** and
 - After a sign-up the page reads the code's status again: a spent code means a new account, a still-unused one means Ring approved with a key that was already signed up here.
 - Once signed in, the Account tab shows the person's pubky.app profile and their public files, grouped by the app that wrote them, with the space they take. All of it comes from the homeserver's public storage API (`GET /storage/<pubky>/pub/…`): the listing names the files, and each size is a `HEAD` request, a few at a time, up to 2000 files. The profile is `pub/pubky.app/profile.json`; its image is fetched and shown as a `data:` URL, since the page's Content-Security-Policy allows no other image source. Nothing here needs a session: a person's public files are public. The storage allowance is an admin matter and is not shown.
 
+- The Activity tab is for signed-in account holders only; visitors are sent to the Account tab. It shows the person's own newest public changes (files written and removed) from the event stream's batch mode, ten at a time: `GET /events-stream?user=<pubky>&reverse=true&limit=10`, one request per page, "Load more" asking for the ten before the last cursor. On request ("See all activity") it also shows everyone's: the newest 300 lines of the public feed (`GET /events/`; one request when the feed is short, otherwise a few one-line probes find its end first) as bursts, consecutive changes by one person in one app, newest first, with who has been active and which apps, and the person's own bursts marked. Names come from people's `profile.json` where they have one (a dozen small reads, no images), otherwise a shortened pubky; there are no dates, since the feed carries none and asking the files would cost a request each. Nothing polls; a button reads the feed again.
+- The Homeserver tab is the admin dashboard's "Server & Connection" card, from public sources: `GET /info` (whether the homeserver answers, the address its key resolved to, the features it announces), the sign-up mode from the invite check, and the homeserver's signed record on the Pubky network, read from the pkarr relay (`https://pkarr.pubky.app/<key>`, or the testnet's) and decoded in the browser: the Pubky address (IP and port) it publishes, when it was published, and a "View" dialog with its DNS records. The homeserver's version is admin-only and not shown.
+
 Because every request comes from the visitor's own browser, the homeserver sees each visitor's address and applies its rate limits per visitor. The page never sees a private key and forgets everything on reload.
-
-## Roadmap
-
-- **Activity tab:** the homeserver's public event feed (`GET /events/`) as a day-by-day timeline of files added, changed and removed, who has been active, and which apps they use; with a signed-in visitor's own changes marked.
-- **Homeserver tab:** the homeserver's public key and domain, the features it supports (`GET /info`), and when its record on the Pubky network was last published.
 
 ## Known limits
 
@@ -64,14 +62,16 @@ npm run build                               # static files in dist/
 
 ## Code layout
 
-| Path                       | What                                                                                                                          |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `src/components/`          | The page: `AccountFlow` (the tabs) and the Account tab's steps and cards; `ActivityTab` and `HomeserverTab` are placeholders. |
-| `src/useAccountFlow.ts`    | The sign-up/sign-in steps as a state machine.                                                                                 |
-| `src/usePublicFiles.ts`    | A signed-in person's public files, with sizes read a few at a time.                                                           |
-| `src/useProfile.ts`        | Their pubky.app profile.                                                                                                      |
-| `src/homeserver-client.ts` | The only module that loads the Pubky SDK: invite checks, Ring requests, sign-in checks, public file and profile reads.        |
-| `src/config.ts`            | Loads and checks `config.json`.                                                                                               |
-| `docker/`                  | nginx config, security headers, and the start-up script that writes `config.json`.                                            |
+| Path                       | What                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `src/components/`          | The page: `AccountFlow` (the tabs), the Account tab's steps and cards, `ActivityTab` and `HomeserverTab`.                      |
+| `src/useAccountFlow.ts`    | The sign-up/sign-in steps as a state machine.                                                                                  |
+| `src/usePublicFiles.ts`    | A signed-in person's public files, with sizes read a few at a time.                                                            |
+| `src/useProfile.ts`        | Their pubky.app profile.                                                                                                       |
+| `src/useActivity.ts`       | The event feed as bursts, with names and dates filled in as they arrive, polled while watched; `activity.ts` is the pure part. |
+| `src/useHomeserver.ts`     | `/info` and the homeserver's signed network record; `pkarr.ts` decodes the record.                                             |
+| `src/homeserver-client.ts` | The only module that loads the Pubky SDK: invite checks, Ring requests, sign-in checks, public file, profile and feed reads.   |
+| `src/config.ts`            | Loads and checks `config.json`.                                                                                                |
+| `docker/`                  | nginx config, security headers, and the start-up script that writes `config.json`.                                             |
 
 From the rest of the repository the page uses only `src/components/ui`, `src/hooks/useCopyFeedback.ts`, `src/lib/utils.ts`, `src/lib/pubky-ring.ts`, `src/app/theme.css` and `public/`, through the aliases in `vite.config.ts` (`SHARED`). Nothing else of the admin app is reachable from here, and the image is built from those files only (`Dockerfile.dockerignore`).

@@ -4,6 +4,7 @@ import { ExternalLink, IdCard } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { ProfileState } from '../useProfile';
+import { Avatar } from './Avatar';
 
 /** The person's pubky.app profile, read from their own public files on this homeserver. */
 export function ProfileCard({ state }: { state: ProfileState }) {
@@ -52,16 +53,7 @@ function ProfileBody({ state }: { state: ProfileState }) {
   const { name, bio, status, links, avatar } = state.profile;
   return (
     <div className="flex items-start gap-4">
-      {avatar ? (
-        <img src={avatar} alt="" className="size-14 shrink-0 rounded-full object-cover" data-testid="profile-avatar" />
-      ) : (
-        <div
-          className="flex size-14 shrink-0 items-center justify-center rounded-full bg-brand/16 text-lg font-semibold text-brand"
-          aria-hidden
-        >
-          {name.trim().charAt(0).toUpperCase() || '?'}
-        </div>
-      )}
+      <Avatar image={avatar} name={name} testId="profile-avatar" />
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-base font-semibold break-words" data-testid="profile-name">
           {name}

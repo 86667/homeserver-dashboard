@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { configFromEnv } from './config-from-env.mjs';
+import { version } from '../package.json';
 
 const repo = (path: string) => fileURLToPath(new URL(`../${path}`, import.meta.url));
 
@@ -35,6 +36,8 @@ function configJson(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), configJson()],
+  // The page shows the repository's version, like the admin dashboard.
+  define: { __APP_VERSION__: JSON.stringify(version) },
   // The admin app's public/ holds the logos both apps use.
   publicDir: repo('public'),
   resolve: {
@@ -44,6 +47,7 @@ export default defineConfig({
     dedupe: [
       'react',
       'react-dom',
+      '@radix-ui/react-dialog',
       '@radix-ui/react-label',
       '@radix-ui/react-slot',
       '@radix-ui/react-tabs',
