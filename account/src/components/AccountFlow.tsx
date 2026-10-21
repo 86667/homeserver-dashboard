@@ -1,18 +1,17 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { UserRound } from 'lucide-react';
+import { Activity, Server, UserRound } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { AccountConfig } from '../model';
 import { PUBKY_RING_URL } from '@/lib/pubky-ring';
-import { AccountDetails } from './AccountDetails';
-import { ErrorPanel } from './ErrorPanel';
-import { describeOutcome } from '../outcome';
-import { StartStep } from './StartStep';
+import { AccountTab } from './AccountTab';
+import { ActivityTab } from './ActivityTab';
+import { HomeserverTab } from './HomeserverTab';
 import { useAccountFlow } from '../useAccountFlow';
-import { WaitingStep } from './WaitingStep';
+import { useProfile } from '../useProfile';
+import { usePublicFiles } from '../usePublicFiles';
 
 interface AccountFlowProps {
   /** null: the page is not set up (no usable homeserver key configured). */
@@ -22,69 +21,59 @@ interface AccountFlowProps {
 }
 
 /**
- * The public account page: sign up on this homeserver with Pubky Ring and an
- * invite code (from the link or typed in), or sign in to an existing account.
- * Nothing is stored; reloading signs out.
+ * The public page of a homeserver, in three tabs: the visitor's account
+ * (sign up or sign in with Pubky Ring, then what they have here), the
+ * homeserver's public activity, and facts about the homeserver. Nothing is
+ * stored; reloading signs out.
  */
 export function AccountFlow({ config, initialCode }: AccountFlowProps) {
-  return <AccountPage>{config ? <Flow config={config} initialCode={initialCode} /> : <NotSetUp />}</AccountPage>;
-}
-
-function Flow({ config, initialCode }: { config: AccountConfig; initialCode: string }) {
-  const { step, invite, inviteRequired, canSignUp, start, backToStart, retryConnect } = useAccountFlow(
-    config,
-    initialCode,
-  );
-
-  switch (step.name) {
-    case 'connecting':
-    case 'checking':
-      return <Busy text={step.name === 'checking' ? 'Looking up your account…' : 'Connecting to the homeserver…'} />;
-    case 'unavailable':
-      return (
-        <ErrorPanel
-          title="The homeserver cannot be reached right now"
-          message={step.message}
-          onRetry={() => void retryConnect()}
-          testId="account-unavailable"
-        />
-      );
-    case 'start':
-      return (
-        <StartStep
-          inviteRequired={inviteRequired}
-          code={invite.code}
-          codeState={invite.state}
-          canSignUp={canSignUp}
-          onCodeChange={invite.setCode}
-          onSignUp={() => void start('signup')}
-          onSignIn={() => void start('signin')}
-        />
-      );
-    case 'waiting':
-      return <WaitingStep kind={step.kind} authUrl={step.authUrl} onCancel={backToStart} />;
-    case 'done':
-      return (
-        <AccountDetails
-          outcome={describeOutcome(step.kind, step.info, step.inviteStatus)}
-          pubky={step.info.pubky}
-          onSignOut={backToStart}
-        />
-      );
-    case 'failed':
-      return (
-        <ErrorPanel title="Something went wrong" message={step.message} onRetry={backToStart} testId="account-failed" />
-      );
-  }
-}
-
-function Busy({ text }: { text: string }) {
   return (
-    <div className="space-y-3" data-testid="account-busy">
-      <Skeleton className="h-4 w-3/4" />
-      <Skeleton className="h-9 w-full" />
-      <p className="text-xs text-muted-foreground">{text}</p>
-    </div>
+    <AccountPage>
+      {config ? <ConnectedTabs config={config} initialCode={initialCode} /> : <PageTabs account={<NotSetUp />} />}
+    </AccountPage>
+  );
+}
+
+/** Holds the sign-in and what was loaded for it, so switching tabs keeps both. */
+function ConnectedTabs({ config, initialCode }: { config: AccountConfig; initialCode: string }) {
+  const flow = useAccountFlow(config, initialCode);
+  const signedIn = flow.step.name === 'done' && flow.step.info.hasAccount ? flow.step.info.pubky : null;
+  const files = usePublicFiles(flow.client, signedIn);
+  const profile = useProfile(flow.client, signedIn);
+  return <PageTabs account={<AccountTab flow={flow} files={files} profile={profile} />} />;
+}
+
+function PageTabs({ account }: { account: ReactNode }) {
+  return (
+    <Tabs defaultValue="account" className="w-full">
+      <TabsList className="grid w-full grid-cols-3">
+        <TabsTrigger value="account" className="gap-2 text-xs sm:text-sm [&_svg]:size-4" data-testid="tab-account">
+          <UserRound className="shrink-0" />
+          Account
+        </TabsTrigger>
+        <TabsTrigger value="activity" className="gap-2 text-xs sm:text-sm [&_svg]:size-4" data-testid="tab-activity">
+          <Activity className="shrink-0" />
+          Activity
+        </TabsTrigger>
+        <TabsTrigger
+          value="homeserver"
+          className="gap-2 text-xs sm:text-sm [&_svg]:size-4"
+          data-testid="tab-homeserver"
+        >
+          <Server className="shrink-0" />
+          Homeserver
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="account" className="space-y-4">
+        {account}
+      </TabsContent>
+      <TabsContent value="activity" className="space-y-4">
+        <ActivityTab />
+      </TabsContent>
+      <TabsContent value="homeserver" className="space-y-4">
+        <HomeserverTab />
+      </TabsContent>
+    </Tabs>
   );
 }
 
@@ -99,11 +88,11 @@ function NotSetUp() {
   );
 }
 
-/** The page around the flow: logo, card and footer links. */
+/** The page around the tabs: logo and footer links. */
 function AccountPage({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <main className="mx-auto flex w-full max-w-lg flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
+      <main className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-10">
         <header className="pt-4 sm:pt-5">
           <img
             src="/PubkyHomeserver.svg"
@@ -114,19 +103,7 @@ function AccountPage({ children }: { children: ReactNode }) {
           />
         </header>
 
-        <Card data-testid="account">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <UserRound className="size-5" />
-              Your account
-            </CardTitle>
-            <CardDescription>
-              Create a Pubky account on this homeserver, or sign in to yours. Your keys stay in Pubky Ring on your
-              phone.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>{children}</CardContent>
-        </Card>
+        {children}
 
         <footer className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground">
           <a

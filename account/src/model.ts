@@ -28,6 +28,29 @@ export type AccountInfo = {
   hasAccount: boolean;
 };
 
+/** One of a person's public files on this homeserver. Size and date arrive later, from a HEAD request. */
+export type PublicFile = {
+  /** The file's `pubky://` address. */
+  url: string;
+  /** Its path under `/pub/`, e.g. `pubky.app/profile.json`. */
+  path: string;
+  /** The first folder under `/pub/`: by convention the app that wrote the file. */
+  app: string;
+  size?: number;
+  modifiedAt?: Date;
+  contentType?: string;
+};
+
+/** A person's pubky.app profile (`/pub/pubky.app/profile.json`), as far as the page shows it. */
+export type Profile = {
+  name: string;
+  bio: string | null;
+  status: string | null;
+  links: { title: string; url: string }[];
+  /** The avatar as a `data:` URL, when the profile has one that could be fetched. */
+  avatar: string | null;
+};
+
 const INVITE_CODE = /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/;
 
 /**

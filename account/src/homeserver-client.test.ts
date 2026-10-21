@@ -10,13 +10,16 @@ const TOKEN_BYTES = new Uint8Array([1, 2, 3]);
 const sdk = vi.hoisted(() => {
   const clientFetch = vi.fn();
   const startCookieAuthFlow = vi.fn();
+  const publicGet = vi.fn();
   class Pubky {
     client = { fetch: clientFetch };
+    publicStorage = { get: publicGet };
     startCookieAuthFlow = startCookieAuthFlow;
     static testnet = vi.fn(() => new Pubky());
   }
   return {
     clientFetch,
+    publicGet,
     startCookieAuthFlow,
     Pubky,
     AuthFlowKind: {
@@ -210,5 +213,154 @@ describe('startRequest', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     process.off('unhandledRejection', unhandled);
     expect(unhandled).not.toHaveBeenCalled();
+  });
+});
+
+describe('listPublicFiles', () => {
+  const base = `https://${HOMESERVER}/storage/${ALICE}/pub/`;
+  const listing = (...paths: string[]) => new Response(paths.map((p) => `pubky://${ALICE}/pub/${p}`).join('\n'));
+
+  it('reads the listing into files with their app folder, skipping folders', async () => {
+    homeserver({ [`GET ${base}?limit=1000`]: () => listing('pubky.app/', 'pubky.app/profile.json', 'notes.txt') });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.listPublicFiles(ALICE)).toEqual({
+      files: [
+        { url: `pubky://${ALICE}/pub/pubky.app/profile.json`, path: 'pubky.app/profile.json', app: 'pubky.app' },
+        { url: `pubky://${ALICE}/pub/notes.txt`, path: 'notes.txt', app: '' },
+      ],
+      more: false,
+    });
+  });
+
+  it('follows the cursor page by page and stops at the cap', async () => {
+    const page = (from: number, count: number) => Array.from({ length: count }, (_, i) => `f${from + i}.txt`);
+    homeserver({
+      [`GET ${base}?limit=3`]: () => listing(...page(0, 3)),
+      [`GET ${base}?limit=3&cursor=${encodeURIComponent(`pubky://${ALICE}/pub/f2.txt`)}`]: () => listing(...page(3, 3)),
+      [`GET ${base}?limit=1&cursor=${encodeURIComponent(`pubky://${ALICE}/pub/f5.txt`)}`]: () => listing('f6.txt'),
+    });
+    const client = await HomeserverClient.connect(config);
+    const { files, more } = await client.listPublicFiles(ALICE, 7, 3);
+    expect(files.map((f) => f.path)).toEqual(['f0.txt', 'f1.txt', 'f2.txt', 'f3.txt', 'f4.txt', 'f5.txt', 'f6.txt']);
+    expect(more).toBe(true);
+  });
+
+  it('ends when a page comes back short', async () => {
+    homeserver({
+      [`GET ${base}?limit=2`]: () => listing('a', 'b'),
+      [`GET ${base}?limit=2&cursor=${encodeURIComponent(`pubky://${ALICE}/pub/b`)}`]: () => listing('c'),
+    });
+    const client = await HomeserverClient.connect(config);
+    const { files, more } = await client.listPublicFiles(ALICE, 4, 2);
+    expect(files.map((f) => f.path)).toEqual(['a', 'b', 'c']);
+    expect(more).toBe(false);
+  });
+
+  it('treats a person with nothing stored as having no files', async () => {
+    homeserver({ [`GET ${base}?limit=1000`]: () => new Response('Directory Not Found', { status: 404 }) });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.listPublicFiles(ALICE)).toEqual({ files: [], more: false });
+  });
+
+  it('reports any other failure', async () => {
+    homeserver({ [`GET ${base}?limit=1000`]: () => new Response('', { status: 503 }) });
+    const client = await HomeserverClient.connect(config);
+    await expect(client.listPublicFiles(ALICE)).rejects.toThrow('503');
+  });
+});
+
+describe('fileStats', () => {
+  const file = { url: `pubky://${ALICE}/pub/pubky.app/profile.json`, path: 'pubky.app/profile.json', app: 'pubky.app' };
+
+  it('takes size, date and type from the HEAD answer', async () => {
+    homeserver({
+      [`HEAD https://${HOMESERVER}/storage/${ALICE}/pub/pubky.app/profile.json`]: () =>
+        new Response(null, {
+          headers: {
+            'Content-Length': '140',
+            'Last-Modified': 'Thu, 20 Aug 2026 10:03:37 GMT',
+            'Content-Type': 'application/json',
+          },
+        }),
+    });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.fileStats(file)).toEqual({
+      size: 140,
+      modifiedAt: new Date('2026-08-20T10:03:37Z'),
+      contentType: 'application/json',
+    });
+  });
+
+  it('copes with missing or odd headers', async () => {
+    homeserver({
+      [`HEAD https://${HOMESERVER}/storage/${ALICE}/pub/pubky.app/profile.json`]: () =>
+        new Response(null, { headers: { 'Last-Modified': 'not a date' } }),
+    });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.fileStats(file)).toEqual({ size: 0, modifiedAt: undefined, contentType: undefined });
+  });
+});
+
+describe('profile', () => {
+  const url = `GET https://${HOMESERVER}/storage/${ALICE}/pub/pubky.app/profile.json`;
+
+  it('is null for someone without a pubky.app profile', async () => {
+    homeserver({ [url]: () => new Response('', { status: 404 }) });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.profile(ALICE)).toBeNull();
+  });
+
+  it('reads name, bio, status and links, dropping what is malformed', async () => {
+    homeserver({
+      [url]: () =>
+        json({
+          name: 'Alice',
+          bio: ' ',
+          status: 'around',
+          links: [{ title: 'Site', url: 'https://alice.example' }, { title: 'bad' }, 'junk'],
+          image: null,
+        }),
+    });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.profile(ALICE)).toEqual({
+      name: 'Alice',
+      bio: null,
+      status: 'around',
+      links: [{ title: 'Site', url: 'https://alice.example' }],
+      avatar: null,
+    });
+  });
+
+  it('turns a pubky.app image record into a data URL through its blob', async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    homeserver({ [url]: () => json({ name: 'Alice', image: `pubky://${ALICE}/pub/pubky.app/files/img1` }) });
+    sdk.publicGet.mockImplementation(async (address: string) => {
+      if (address.endsWith('/files/img1')) return json({ src: `pubky://${ALICE}/pub/pubky.app/blobs/blob1` });
+      if (address.endsWith('/blobs/blob1')) {
+        return new Response(png, { headers: { 'Content-Type': 'image/png', 'Content-Length': '4' } });
+      }
+      throw new Error(`unexpected read: ${address}`);
+    });
+    const client = await HomeserverClient.connect(config);
+    expect((await client.profile(ALICE))?.avatar).toBe('data:image/png;base64,iVBORw==');
+  });
+
+  it.each([
+    ['not an image', () => new Response('x', { headers: { 'Content-Type': 'text/html' } })],
+    ['too large', () => new Response('x', { headers: { 'Content-Type': 'image/png', 'Content-Length': '9999999' } })],
+    ['unreachable', () => Promise.reject(new Error('offline'))],
+  ])('shows no avatar when the image is %s, and still returns the profile', async (_case, reply) => {
+    homeserver({ [url]: () => json({ name: 'Alice', image: 'https://cdn.example/a.png' }) });
+    sdk.clientFetch.mockImplementation(async (target: string) =>
+      target === 'https://cdn.example/a.png' ? reply() : json({ name: 'Alice', image: 'https://cdn.example/a.png' }),
+    );
+    const client = await HomeserverClient.connect(config);
+    expect(await client.profile(ALICE)).toMatchObject({ name: 'Alice', avatar: null });
+  });
+
+  it('ignores a profile without a name', async () => {
+    homeserver({ [url]: () => json({ bio: 'no name' }) });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.profile(ALICE)).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AccountConfig, AccountInfo, InviteStatus } from '../model';
+import type { AccountConfig, AccountInfo, InviteStatus, Profile, PublicFile } from '../model';
 import { AccountFlow } from './AccountFlow';
 import { HomeserverClient, type RingRequest } from '../homeserver-client';
 
@@ -19,19 +19,33 @@ type FakeHomeserver = {
   /** The code's status, by how many times it has been asked about. */
   inviteStatus?: (askedBefore: number) => InviteStatus;
   account?: () => Promise<AccountInfo>;
+  files?: PublicFile[];
+  profile?: Profile | null;
 };
+
+const publicFile = (path: string, size: number): PublicFile => ({
+  url: `pubky://${ALICE}/pub/${path}`,
+  path,
+  app: path.split('/')[0],
+  size,
+});
 
 /** A homeserver client whose answers the test chooses. */
 function homeserver({
   inviteRequired = true,
   inviteStatus = () => 'valid',
   account = () => Promise.resolve({ pubky: ALICE, hasAccount: true }),
+  files = [publicFile('pubky.app/profile.json', 140), publicFile('pubky.app/posts/1', 60)],
+  profile = { name: 'Alice', bio: 'Hi there', status: null, links: [], avatar: null },
 }: FakeHomeserver = {}) {
   let asked = 0;
   const client = {
     isInviteRequired: vi.fn(async () => inviteRequired),
     inviteStatus: vi.fn(async () => inviteStatus(asked++)),
     startRequest: vi.fn((): RingRequest => ({ authUrl: 'pubkyauth://signup?secret=s', awaitAccount: () => account() })),
+    listPublicFiles: vi.fn(async () => ({ files: files.map(({ size: _, ...f }) => ({ ...f })), more: false })),
+    fileStats: vi.fn(async (f: PublicFile) => ({ size: files.find((x) => x.path === f.path)?.size ?? 0 })),
+    profile: vi.fn(async () => profile),
   };
   vi.mocked(HomeserverClient.connect).mockResolvedValue(client as unknown as HomeserverClient);
   return client;
@@ -186,5 +200,83 @@ describe('AccountFlow waiting and failures', () => {
     render(<AccountFlow config={null} initialCode="" />);
     expect(screen.getByTestId('account-not-set-up').textContent).toContain('not set up');
     expect(HomeserverClient.connect).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountFlow tabs', () => {
+  it('has the three tabs, with Account open and the others saying what they will show', async () => {
+    homeserver();
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    expect(screen.getByTestId('tab-account')).toBeTruthy();
+    expect(screen.getByTestId('tab-activity')).toBeTruthy();
+    expect(screen.getByTestId('tab-homeserver')).toBeTruthy();
+    expect(await screen.findByTestId('account')).toBeTruthy();
+
+    fireEvent.mouseDown(screen.getByTestId('tab-activity'));
+    expect(await screen.findByTestId('activity-tab')).toBeTruthy();
+    fireEvent.mouseDown(screen.getByTestId('tab-homeserver'));
+    expect(await screen.findByTestId('homeserver-tab')).toBeTruthy();
+  });
+
+  it('shows the tabs even when the page is not set up', () => {
+    render(<AccountFlow config={null} initialCode="" />);
+    expect(screen.getByTestId('tab-account')).toBeTruthy();
+    expect(screen.getByTestId('account-not-set-up')).toBeTruthy();
+  });
+
+  it('keeps the sign-in while switching tabs', async () => {
+    homeserver();
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    await screen.findByText('Welcome back');
+    fireEvent.mouseDown(screen.getByTestId('tab-activity'));
+    await screen.findByTestId('activity-tab');
+    fireEvent.mouseDown(screen.getByTestId('tab-account'));
+    expect(await screen.findByText('Welcome back')).toBeTruthy();
+  });
+});
+
+describe('AccountFlow signed-in details', () => {
+  it('shows the profile and the files with the space they use', async () => {
+    const client = homeserver();
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    await screen.findByText('Welcome back');
+
+    expect((await screen.findByTestId('profile-name')).textContent).toBe('Alice');
+    expect(screen.getByText('Hi there')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('files-summary').textContent).toContain('200 B'));
+    expect(screen.getByTestId('files-summary').textContent).toContain('in 2 public files');
+    expect(screen.getByTestId('files-by-app').textContent).toContain('pubky.app');
+    expect(screen.getByTestId('files-by-app').textContent).toContain('profile.json');
+    expect(client.listPublicFiles).toHaveBeenCalledWith(ALICE);
+    expect(client.profile).toHaveBeenCalledWith(ALICE);
+  });
+
+  it('says so when there is no profile and nothing stored', async () => {
+    homeserver({ files: [], profile: null });
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    await screen.findByTestId('profile-none');
+    await screen.findByTestId('files-none');
+  });
+
+  it('shows neither card for a pubky without an account here', async () => {
+    homeserver({ account: () => Promise.resolve({ pubky: ALICE, hasAccount: false }) });
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    await screen.findByTestId('account-missing');
+    expect(screen.queryByTestId('profile-card')).toBeNull();
+    expect(screen.queryByTestId('files-card')).toBeNull();
+  });
+
+  it('removes the cards again on sign-out', async () => {
+    homeserver();
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    await screen.findByTestId('files-card');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    await screen.findByTestId('account-signin');
+    expect(screen.queryByTestId('files-card')).toBeNull();
   });
 });
