@@ -55,6 +55,9 @@ Environment=HOMESERVER_CONFIG_PATH=/home/pubky/.pubky/config.toml
 # service names (http://homeserver:...), which do not resolve on a plain host.
 Environment=CLIENT_BASE_URL=http://127.0.0.1:6286
 Environment=METRICS_BASE_URL=http://127.0.0.1:6289
+# Public address of the account page, if you serve one (see account/). With it,
+# every invite also gets a link that opens in any browser.
+#Environment=ACCOUNT_PAGE_URL=https://dashboard.example.com
 # The Logs tab reads a file and stays hidden without one. A homeserver that
 # only logs to journald has none; if yours also writes a log file, point at it.
 #Environment=HOMESERVER_LOG_PATH=/home/pubky/.pubky/homeserver.log

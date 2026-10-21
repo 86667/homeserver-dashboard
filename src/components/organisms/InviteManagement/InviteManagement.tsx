@@ -11,6 +11,7 @@ import { Info, Copy, Check, QrCode, X, Gift, Plus, CircleCheckBig, RefreshCw } f
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { usePolling } from '@/hooks/usePolling';
 import { QRCodeSVG } from 'qrcode.react';
+import { inviteLink } from '@/lib/invite-link';
 import { PUBKY_RING_URL } from '@/lib/pubky-ring';
 
 /** How often the signup-code stats are re-read while a QR is on screen. */
@@ -31,6 +32,8 @@ export interface InviteManagementProps {
   homeserverPubkey?: string;
   /** Background re-read of the signup-code stats, polled while a QR is open. */
   onRefreshStats?: () => void | Promise<void>;
+  /** The public account page (ACCOUNT_PAGE_URL). With it, each invite also gets a link that opens in any browser. */
+  accountPageUrl?: string | null;
 }
 
 /** "Get Pubky Ring" assist, shown wherever the app is a prerequisite. */
@@ -61,6 +64,7 @@ export function InviteManagement({
   isStatsLoading,
   homeserverPubkey,
   onRefreshStats,
+  accountPageUrl,
 }: InviteManagementProps) {
   const { copiedKey, copy } = useCopyFeedback();
   const [expandedInviteIndex, setExpandedInviteIndex] = useState<number | null>(null);
@@ -313,6 +317,39 @@ export function InviteManagement({
                             <span className="text-xs text-muted-foreground">QR code</span>
                           </div>
                           <div className="min-w-0 flex-1">
+                            {accountPageUrl && (
+                              <div className="mb-3" data-testid="invite-account-link">
+                                <p className="mb-1 text-xs text-muted-foreground">
+                                  Sign-up link (opens in any browser)
+                                </p>
+                                <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                                  <code className="min-w-0 flex-1 font-mono text-xs break-all text-foreground">
+                                    {inviteLink(accountPageUrl, invite)}
+                                  </code>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => copy(inviteLink(accountPageUrl, invite), `link-${index}`)}
+                                    className="h-8 w-8 shrink-0"
+                                    title={copiedKey === `link-${index}` ? 'Copied' : 'Copy sign-up link'}
+                                    aria-label={
+                                      copiedKey === `link-${index}`
+                                        ? 'Copied sign-up link'
+                                        : `Copy sign-up link ${index + 1}`
+                                    }
+                                  >
+                                    {copiedKey === `link-${index}` ? (
+                                      <Check className="h-4 w-4" />
+                                    ) : (
+                                      <Copy className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </div>
+                                <p className="mt-2 mb-1 text-xs text-muted-foreground">
+                                  Pubky Ring link (what the QR code holds)
+                                </p>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
                               <code className="min-w-0 flex-1 font-mono text-xs break-all text-foreground">
                                 {signupUrl}

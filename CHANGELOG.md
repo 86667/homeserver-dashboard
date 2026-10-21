@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Each invite gets a sign-up link that opens in any browser, `https://<account page>/?token=<code>`, next to its code and Pubky Ring QR code, when `ACCOUNT_PAGE_URL` names the public address of the account page. Without the setting, invites look as before.
 - Admin sign-in with Pubky Ring. With `ADMIN_PUBKEYS` set to a list of pubkys, every API route except `/api/health` and the sign-in routes refuses requests that do not carry an admin session, and the page shows a QR code to sign in with Ring. The server checks the signature itself and accepts a signed request only from a listed key, only for the one-off request it issued for that attempt, only once, and only from the browser that started the attempt. With sign-in on, the API also answers only requests made by the dashboard page's own script. A value that is set but empty or invalid closes the dashboard instead of opening it. Without the variable nothing changes, so the Umbrel app, which authenticates in its app proxy, behaves as before. The example systemd unit ships with an empty `ADMIN_PUBKEYS`, closed until a pubky is filled in.
 - An account page for the homeserver's users, as its own app and Docker image (`account/`). People sign up by scanning a QR code with Pubky Ring, with an invite code typed in or carried by an invite link (`?token=<code>`), or sign in to an account they already have; the page confirms their pubky has an account here. It is static files with no server side and no admin credential: the visitor's browser talks to the homeserver's public API itself. It shares the dashboard's UI primitives and theme (now in `src/app/theme.css`). See `account/README.md`.
 - The dashboard can run under systemd, without Docker. `npm run bundle` builds `.next/standalone` and makes it self-contained, so `node server.js` inside it is the whole application; it leaves out any `.env` / `.env.production` from the checkout and fails if the result is incomplete. `deploy/homeserver-dashboard.service` is an example unit that runs it: bound to loopback, as its own user in the homeserver's group (so it can read `config.toml` but not the homeserver's key), with the admin password in a root-only `EnvironmentFile`. CI builds the bundle. The Docker image is unchanged.
+
+### Fixed
+
+- Disabling or enabling a user reported a failure although it had succeeded: the homeserver answers those with a plain-text `Ok`, which the dashboard tried to parse as JSON. Any 2xx answer without a JSON body now counts as success.
 
 ## [0.1.29]
 

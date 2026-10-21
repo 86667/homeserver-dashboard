@@ -57,7 +57,14 @@ export class AdminService {
       }
 
       if (res.status === 204) return undefined as T;
-      return (await res.json()) as T;
+      // Not every success carries JSON: the homeserver answers disable/enable
+      // with a plain-text "Ok", which was reported as a failure before.
+      const body = await res.text();
+      try {
+        return JSON.parse(body) as T;
+      } catch {
+        return undefined as T;
+      }
     } catch (error) {
       if (error instanceof Error) {
         throw error;

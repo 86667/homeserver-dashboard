@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdminInfo, useAdminActions, useDisabledUsers } from '@/hooks/admin';
+import { useAccountPageUrl } from '@/hooks/useAccountPageUrl';
 import { usePlatform } from '@/components/providers/PlatformProvider';
 import { AuthGate } from '@/components/organisms/AuthGate';
 import { DashboardNavbar } from '@/components/organisms/DashboardNavbar';
@@ -62,6 +63,7 @@ export default function DashboardPage() {
 
 function Dashboard() {
   const platform = usePlatform();
+  const accountPageUrl = useAccountPageUrl();
   const {
     data: info,
     isLoading: infoLoading,
@@ -357,6 +359,7 @@ function Dashboard() {
                 isStatsLoading={infoLoading}
                 homeserverPubkey={info?.public_key ?? info?.pubkey}
                 onRefreshStats={refreshInfo}
+                accountPageUrl={accountPageUrl}
               />
             </TabsContent>
 

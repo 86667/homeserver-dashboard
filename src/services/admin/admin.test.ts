@@ -67,6 +67,19 @@ describe('AdminService', () => {
     expect(init.method).toBe('POST');
   });
 
+  it('treats the homeserver\'s plain-text "Ok" as success (disable/enable answer that way)', async () => {
+    fetchMock.mockImplementation(
+      async () => new Response('Ok', { status: 200, headers: { 'Content-Type': 'text/plain' } }),
+    );
+    await expect(service.disableUser({ pubkey: 'pk1' })).resolves.toBeUndefined();
+    await expect(service.enableUser({ pubkey: 'pk1' })).resolves.toBeUndefined();
+  });
+
+  it('still fails on a non-2xx plain-text answer', async () => {
+    fetchMock.mockResolvedValue(new Response('user not found', { status: 404 }));
+    await expect(service.disableUser({ pubkey: 'pk1' })).rejects.toThrow('user not found');
+  });
+
   it('enableUser posts to the enable endpoint', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
     await service.enableUser({ pubkey: 'pk2' });

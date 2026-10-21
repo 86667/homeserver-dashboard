@@ -67,6 +67,35 @@ describe('InviteManagement QR panel', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(EXPECTED_URL));
   });
 
+  it('adds a sign-up link to the account page when its address is configured', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    render(
+      <InviteManagement
+        invites={[INVITE]}
+        onGenerate={noop}
+        homeserverPubkey={HOMESERVER}
+        accountPageUrl="https://dashboard.example.com/"
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Show invite QR code'));
+
+    const link = `https://dashboard.example.com/?token=${INVITE}`;
+    expect(screen.getByTestId('invite-account-link').textContent).toContain(link);
+    // The Ring deeplink and its QR stay as they were.
+    expect(screen.getByText(EXPECTED_URL)).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Copy sign-up link 1'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(link));
+  });
+
+  it('shows no sign-up link when no account page address is configured', () => {
+    render(<InviteManagement invites={[INVITE]} onGenerate={noop} homeserverPubkey={HOMESERVER} />);
+    fireEvent.click(screen.getByLabelText('Show invite QR code'));
+    expect(screen.queryByTestId('invite-account-link')).toBeNull();
+    expect(screen.getByText(EXPECTED_URL)).toBeTruthy();
+  });
+
   const watchProps = (total: number, unused: number, onRefreshStats: () => void) => ({
     invites: [INVITE],
     onGenerate: noop,
