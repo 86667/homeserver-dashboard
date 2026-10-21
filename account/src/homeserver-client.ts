@@ -9,7 +9,14 @@
  * the browser: it is large, and its Node build must never run in the server.
  */
 import type { AuthToken, Capabilities, Pubky } from '@synonymdev/pubky';
-import { ACCOUNT_CAPABILITY, type AccountConfig, type AccountInfo, type InviteStatus } from './model';
+import {
+  ACCOUNT_CAPABILITY,
+  type AccountConfig,
+  type AccountInfo,
+  type InviteStatus,
+  type Profile,
+  type PublicFile,
+} from './model';
 import { withTimeout } from './with-timeout';
 
 type Sdk = typeof import('@synonymdev/pubky');
@@ -32,6 +39,11 @@ const APPROVAL_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** A syntactically valid code no homeserver issues; asks whether codes are required. */
 const PROBE_INVITE_CODE = '0000-0000-0000';
+
+/** Files per listing request; the homeserver pages beyond that with a cursor. */
+const LIST_PAGE = 1000;
+/** An avatar larger than this is not shown. */
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 export class HomeserverClient {
   private constructor(
@@ -106,6 +118,90 @@ export class HomeserverClient {
     return { pubky, hasAccount: true };
   }
 
+  /**
+   * Every file under `pubky`'s `/pub/` on this homeserver, oldest path first,
+   * without sizes: the listing names files only. At most `max` files; more
+   * than that is reported by the caller as "and more". Public data: it needs no session.
+   */
+  async listPublicFiles(
+    pubky: string,
+    max = 5000,
+    pageSize = LIST_PAGE,
+  ): Promise<{ files: PublicFile[]; more: boolean }> {
+    const files: PublicFile[] = [];
+    let cursor: string | null = null;
+    while (files.length < max) {
+      const limit = Math.min(pageSize, max - files.length);
+      const query = `limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const response = await this.homeserverFetch(`/storage/${pubky}/pub/?${query}`);
+      if (response.status === 404) break; // nothing stored yet
+      if (!response.ok) throw new Error(`The homeserver could not list the files (${response.status})`);
+      const page = parseListing(await response.text());
+      files.push(...page);
+      if (page.length < limit) return { files, more: false };
+      cursor = page[page.length - 1].url;
+    }
+    return { files, more: files.length >= max };
+  }
+
+  /** The file's size, modification time and type, from a HEAD request. */
+  async fileStats(file: PublicFile): Promise<Pick<PublicFile, 'size' | 'modifiedAt' | 'contentType'>> {
+    const response = await this.homeserverFetch(storagePath(file.url), { method: 'HEAD' });
+    if (!response.ok) throw new Error(`The homeserver could not describe ${file.path} (${response.status})`);
+    const modified = response.headers.get('last-modified');
+    const modifiedAt = modified ? new Date(modified) : undefined;
+    return {
+      size: Number(response.headers.get('content-length') ?? NaN) || 0,
+      modifiedAt: modifiedAt && !Number.isNaN(modifiedAt.getTime()) ? modifiedAt : undefined,
+      contentType: response.headers.get('content-type') ?? undefined,
+    };
+  }
+
+  /** The person's pubky.app profile, or null when they have none here. */
+  async profile(pubky: string): Promise<Profile | null> {
+    const response = await this.homeserverFetch(`/storage/${pubky}/pub/pubky.app/profile.json`);
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`The homeserver could not read the profile (${response.status})`);
+    const raw = (await response.json()) as Record<string, unknown>;
+    if (typeof raw.name !== 'string') return null;
+    return {
+      name: raw.name,
+      bio: typeof raw.bio === 'string' && raw.bio.trim() ? raw.bio : null,
+      status: typeof raw.status === 'string' && raw.status.trim() ? raw.status : null,
+      links: Array.isArray(raw.links) ? raw.links.filter(isLink) : [],
+      avatar: typeof raw.image === 'string' && raw.image ? await this.avatar(raw.image).catch(() => null) : null,
+    };
+  }
+
+  /**
+   * A profile image as a `data:` URL, or null. pubky.app stores an image as a
+   * `pubky://…/pub/pubky.app/files/<id>` record whose `src` names the blob; a
+   * plain https URL is fetched as it is. A data URL because the page's
+   * Content-Security-Policy allows no other image source.
+   */
+  private async avatar(image: string): Promise<string | null> {
+    let source = image;
+    if (image.startsWith('pubky://') && image.includes('/pub/pubky.app/files/')) {
+      const record = (await this.readPublic(image).then((r) => r.json())) as { src?: unknown };
+      if (typeof record.src !== 'string') return null;
+      source = record.src;
+    }
+    const response = await this.readPublic(source);
+    const size = Number(response.headers.get('content-length') ?? 0);
+    const type = response.headers.get('content-type') ?? '';
+    if (!response.ok || !type.startsWith('image/') || size > MAX_AVATAR_BYTES) return null;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength > MAX_AVATAR_BYTES) return null;
+    return `data:${type};base64,${toBase64(bytes)}`;
+  }
+
+  /** Reads a public resource: a `pubky://` address wherever its owner's homeserver is, or an https URL. */
+  private readPublic(url: string): Promise<Response> {
+    return url.startsWith('pubky://')
+      ? this.pubky.publicStorage.get(url as `pubky://${string}/pub/${string}`)
+      : this.pubky.client.fetch(url);
+  }
+
   private homeserverFetch(path: string, init: RequestInit = {}): Promise<Response> {
     return this.pubky.client.fetch(`https://${this.config.homeserver}${path}`, { ...init, credentials: 'include' });
   }
@@ -138,6 +234,35 @@ async function statusOf(response: Response): Promise<InviteStatus> {
   const body = (await response.json()) as { status?: unknown };
   if (body.status === 'used' || body.status === 'valid') return body.status;
   return 'error';
+}
+
+/** The files in a listing: one `pubky://` address per line; folders end with `/` and are skipped. */
+function parseListing(text: string): PublicFile[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('pubky://') && !line.endsWith('/'))
+    .map((url) => {
+      const path = url.slice(url.indexOf('/pub/') + '/pub/'.length);
+      return { url, path, app: path.includes('/') ? path.slice(0, path.indexOf('/')) : '' };
+    });
+}
+
+/** `pubky://<user>/pub/x` as this homeserver's path-addressed route, `/storage/<user>/pub/x`. */
+function storagePath(url: string): string {
+  return `/storage/${url.slice('pubky://'.length)}`;
+}
+
+const isLink = (value: unknown): value is { title: string; url: string } =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { title?: unknown }).title === 'string' &&
+  typeof (value as { url?: unknown }).url === 'string';
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
 }
 
 /** The homeserver's reason for refusing a sign-in, e.g. "AuthToken already used". */

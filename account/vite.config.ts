@@ -46,6 +46,7 @@ export default defineConfig({
       'react-dom',
       '@radix-ui/react-label',
       '@radix-ui/react-slot',
+      '@radix-ui/react-tabs',
       'class-variance-authority',
       'clsx',
       'lucide-react',

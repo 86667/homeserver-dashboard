@@ -87,5 +87,5 @@ export function useAccountFlow(config: AccountConfig, initialCode: string) {
     [client, signUpCode],
   );
 
-  return { step, invite, inviteRequired, canSignUp, start, backToStart, retryConnect: connect };
+  return { client, step, invite, inviteRequired, canSignUp, start, backToStart, retryConnect: connect };
 }
