@@ -301,6 +301,18 @@ describe('fileStats', () => {
   });
 });
 
+describe('profile without avatar', () => {
+  it('reads the name but not the image', async () => {
+    homeserver({
+      [`GET ${BASE}/storage/${ALICE}/pub/pubky.app/profile.json`]: () =>
+        json({ name: 'Alice', image: 'https://example.com/a.png' }),
+    });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.profile(ALICE, false)).toMatchObject({ name: 'Alice', avatar: null });
+    expect(sdk.clientFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('profile', () => {
   const url = `GET https://${HOMESERVER}/storage/${ALICE}/pub/pubky.app/profile.json`;
 
@@ -362,5 +374,127 @@ describe('profile', () => {
     homeserver({ [url]: () => json({ bio: 'no name' }) });
     const client = await HomeserverClient.connect(config);
     expect(await client.profile(ALICE)).toBeNull();
+  });
+});
+
+const BASE = `https://${HOMESERVER}`;
+const feedLine = (kind: string, pubky: string, path: string) => `${kind} pubky://${pubky}/pub/${path}`;
+const feed = (lines: string[], cursor: number | null) =>
+  new Response([...lines, ...(cursor === null ? [] : [`cursor: ${cursor}`])].join('\n'), { status: 200 });
+
+/** A response that reports the URL it was fetched from, as a real one does. */
+function fetchedFrom(url: string, response: Response): Response {
+  Object.defineProperty(response, 'url', { value: url });
+  return response;
+}
+
+describe('info', () => {
+  it('reads the features and where the homeserver was reached', async () => {
+    homeserver({
+      [`GET ${BASE}/info`]: () =>
+        fetchedFrom('https://homeserver.example.com/info', json({ features: ['path-addressed-storage', 7] })),
+    });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.info()).toEqual({
+      features: ['path-addressed-storage'],
+      address: 'https://homeserver.example.com',
+    });
+  });
+
+  it('copes with a response that does not say where it came from', async () => {
+    homeserver({ [`GET ${BASE}/info`]: () => json({}) });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.info()).toEqual({ features: [], address: null });
+  });
+});
+
+describe('homeserverRecord', () => {
+  it('reads the record from the relay, or reports that there is none', async () => {
+    const bytes = new Uint8Array(64 + 8 + 12);
+    new DataView(bytes.buffer).setBigUint64(64, 1_700_000_000_000_000n);
+    const relayFetch = vi.fn(async () => new Response(bytes, { status: 200 }));
+    vi.stubGlobal('fetch', relayFetch);
+    const client = await HomeserverClient.connect(config);
+    expect(await client.homeserverRecord()).toEqual({ publishedAt: new Date(1_700_000_000_000), records: [] });
+    expect(relayFetch).toHaveBeenCalledWith(`https://pkarr.pubky.app/${HOMESERVER}`, { cache: 'no-store' });
+
+    relayFetch.mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect(await client.homeserverRecord()).toBeNull();
+  });
+
+  it('asks the testnet relay on the testnet', async () => {
+    const relayFetch = vi.fn(async () => new Response(null, { status: 404 }));
+    vi.stubGlobal('fetch', relayFetch);
+    const client = await HomeserverClient.connect({ ...config, testnetHost: '10.0.0.2' });
+    await client.homeserverRecord();
+    expect(relayFetch).toHaveBeenCalledWith(`http://10.0.0.2:15411/${HOMESERVER}`, { cache: 'no-store' });
+  });
+});
+
+describe('latestEvents', () => {
+  it('reads a feed that fits in one page, keeping the newest events', async () => {
+    const lines = [feedLine('PUT', ALICE, 'a'), feedLine('PUT', ALICE, 'b'), feedLine('DEL', ALICE, 'a')];
+    homeserver({ [`GET ${BASE}/events/?cursor=0&limit=1000`]: () => feed(lines, 3) });
+    const client = await HomeserverClient.connect(config);
+    const result = await client.latestEvents(2);
+    expect(result.cursor).toBe('3');
+    expect(result.total).toBe(3);
+    expect(result.events.map((e) => `${e.kind} ${e.path}`)).toEqual(['PUT b', 'DEL a']);
+  });
+
+  it('is empty for an empty feed', async () => {
+    homeserver({ [`GET ${BASE}/events/?cursor=0&limit=1000`]: () => feed([], null) });
+    const client = await HomeserverClient.connect(config);
+    expect(await client.latestEvents(5)).toEqual({ events: [], cursor: '0', total: 0 });
+  });
+
+  it('finds the end of a long feed with a few probes and reads the window before it', async () => {
+    const LAST = 2345; // events at positions 1..LAST
+    const page = (cursor: number, limit: number) => {
+      const positions = Array.from({ length: limit }, (_, i) => cursor + 1 + i).filter((p) => p <= LAST);
+      return feed(
+        positions.map((p) => feedLine('PUT', ALICE, `f${p}`)),
+        positions.length ? positions[positions.length - 1] : null,
+      );
+    };
+    const requests: string[] = [];
+    sdk.clientFetch.mockImplementation(async (url: string) => {
+      requests.push(url);
+      const query = new URL(url).searchParams;
+      return page(Number(query.get('cursor')), Number(query.get('limit')));
+    });
+    const client = await HomeserverClient.connect(config);
+    const result = await client.latestEvents(100);
+    expect(result.total).toBeNull();
+    expect(result.cursor).toBe(String(LAST));
+    expect(result.events).toHaveLength(100);
+    expect(result.events[99].path).toBe(`f${LAST}`);
+    expect(result.events[0].path).toBe(`f${LAST - 99}`);
+    expect(requests.length).toBeLessThan(20);
+    expect(requests.filter((u) => u.includes('limit=1000'))).toHaveLength(1);
+  });
+});
+
+describe('ownEvents', () => {
+  it('asks the event stream for the newest events, then for the ones before a cursor', async () => {
+    const sse = (id: number) => `event: PUT\ndata: pubky://${ALICE}/pub/a/${id}\ndata: cursor: ${id}\n\n`;
+    homeserver({
+      [`GET ${BASE}/events-stream?user=${ALICE}&reverse=true&limit=2`]: () => new Response(sse(9) + sse(8)),
+      [`GET ${BASE}/events-stream?user=${ALICE}:8&reverse=true&limit=2`]: () => new Response(sse(7)),
+    });
+    const client = await HomeserverClient.connect(config);
+    const first = await client.ownEvents(ALICE, null, 2);
+    expect(first.events.map((e) => e.path)).toEqual(['a/9', 'a/8']);
+    expect(first.cursor).toBe('8');
+    const next = await client.ownEvents(ALICE, first.cursor, 2);
+    expect(next.events.map((e) => e.path)).toEqual(['a/7']);
+  });
+});
+
+describe('eventsAfter', () => {
+  it('fails on a refusal', async () => {
+    homeserver({ [`GET ${BASE}/events/?cursor=9&limit=50`]: () => new Response('nope', { status: 500 }) });
+    const client = await HomeserverClient.connect(config);
+    await expect(client.eventsAfter('9', 50)).rejects.toThrow('could not list its events (500)');
   });
 });

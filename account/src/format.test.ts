@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDate } from './format';
+import { formatAge, formatBytes, formatDate, formatDateTime, shortPubky } from './format';
 
 describe('formatBytes', () => {
   it.each([
@@ -19,5 +19,27 @@ describe('formatBytes', () => {
 describe('formatDate', () => {
   it('shows day, month and year', () => {
     expect(formatDate(new Date(2026, 9, 21))).toMatch(/21.*Oct.*2026|Oct.*21.*2026/);
+  });
+});
+
+describe('shortPubky', () => {
+  it('keeps the ends of a key', () => {
+    expect(shortPubky('whgxto9xtroaih7ict9chtuxh1xmbpmci5qd71jsen3ow3bscipy')).toBe('whgxto…cipy');
+    expect(shortPubky('short')).toBe('short');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('includes the time', () => {
+    expect(formatDateTime(new Date(2026, 9, 21, 14, 28))).toMatch(/2026.*14:28|2:28/);
+  });
+});
+
+describe('formatAge', () => {
+  it('rounds to the largest sensible unit', () => {
+    expect(formatAge(30_000)).toBe('less than a minute ago');
+    expect(formatAge(60_000)).toBe('1 minute ago');
+    expect(formatAge(5 * 3_600_000)).toBe('5 hours ago');
+    expect(formatAge(6 * 86_400_000)).toBe('6 days ago');
   });
 });

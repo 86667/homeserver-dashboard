@@ -82,9 +82,10 @@ export function StartStep({
         <Button onClick={onSignUp} disabled={!canSignUp} data-testid="account-signup">
           Sign up with Pubky Ring
         </Button>
-        <Button variant="link" size="sm" onClick={onSignIn} data-testid="account-signin">
-          Already have an account here? Sign in
+        <Button variant="outline" onClick={onSignIn} data-testid="account-signin">
+          Sign in with Pubky Ring
         </Button>
+        <p className="text-center text-xs text-muted-foreground">Sign in if you already have an account here.</p>
       </div>
     </div>
   );

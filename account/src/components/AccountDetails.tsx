@@ -10,6 +10,7 @@ interface AccountDetailsProps {
   outcome: Outcome;
   /** The pubky that approved, z-base-32. */
   pubky: string;
+  /** Offered as "Try again" when there is no account; the page's header has the sign-out. */
   onSignOut: () => void;
 }
 
@@ -71,10 +72,6 @@ export function AccountDetails({ outcome, pubky: key, onSignOut }: AccountDetail
         Keep your recovery phrase safe in Pubky Ring. It is the only way back into this account; the homeserver cannot
         recover it for you.
       </p>
-
-      <Button variant="outline" onClick={onSignOut} className="w-full">
-        Sign out
-      </Button>
     </div>
   );
 }

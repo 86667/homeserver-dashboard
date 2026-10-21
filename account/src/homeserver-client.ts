@@ -9,14 +9,19 @@
  * the browser: it is large, and its Node build must never run in the server.
  */
 import type { AuthToken, Capabilities, Pubky } from '@synonymdev/pubky';
+import { parseEventStream, parseFeed } from './activity';
 import {
   ACCOUNT_CAPABILITY,
   type AccountConfig,
   type AccountInfo,
+  type FeedEvent,
+  type HomeserverInfo,
   type InviteStatus,
   type Profile,
   type PublicFile,
+  type SignedRecord,
 } from './model';
+import { parseSignedRecord } from './pkarr';
 import { withTimeout } from './with-timeout';
 
 type Sdk = typeof import('@synonymdev/pubky');
@@ -44,6 +49,11 @@ const PROBE_INVITE_CODE = '0000-0000-0000';
 const LIST_PAGE = 1000;
 /** An avatar larger than this is not shown. */
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+/** Events per feed request: the homeserver's maximum. */
+const FEED_PAGE = 1000;
+/** Where a key's signed record is read from: the Pubky SDK's default relay, or the testnet's. */
+const PKARR_RELAY = 'https://pkarr.pubky.app';
+const TESTNET_PKARR_PORT = 15411;
 
 export class HomeserverClient {
   private constructor(
@@ -157,8 +167,8 @@ export class HomeserverClient {
     };
   }
 
-  /** The person's pubky.app profile, or null when they have none here. */
-  async profile(pubky: string): Promise<Profile | null> {
+  /** The person's pubky.app profile, or null when they have none here. `withAvatar` false skips the image. */
+  async profile(pubky: string, withAvatar = true): Promise<Profile | null> {
     const response = await this.homeserverFetch(`/storage/${pubky}/pub/pubky.app/profile.json`);
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`The homeserver could not read the profile (${response.status})`);
@@ -169,7 +179,10 @@ export class HomeserverClient {
       bio: typeof raw.bio === 'string' && raw.bio.trim() ? raw.bio : null,
       status: typeof raw.status === 'string' && raw.status.trim() ? raw.status : null,
       links: Array.isArray(raw.links) ? raw.links.filter(isLink) : [],
-      avatar: typeof raw.image === 'string' && raw.image ? await this.avatar(raw.image).catch(() => null) : null,
+      avatar:
+        withAvatar && typeof raw.image === 'string' && raw.image
+          ? await this.avatar(raw.image).catch(() => null)
+          : null,
     };
   }
 
@@ -200,6 +213,86 @@ export class HomeserverClient {
     return url.startsWith('pubky://')
       ? this.pubky.publicStorage.get(url as `pubky://${string}/pub/${string}`)
       : this.pubky.client.fetch(url);
+  }
+
+  /** What the homeserver says about itself, and the address its key resolved to. */
+  async info(): Promise<HomeserverInfo> {
+    const response = await this.homeserverFetch('/info');
+    if (!response.ok) throw new Error(`The homeserver did not describe itself (${response.status})`);
+    const raw = (await response.json()) as { features?: unknown };
+    const features = Array.isArray(raw.features) ? raw.features.filter((f): f is string => typeof f === 'string') : [];
+    return { features, address: originOf(response.url) };
+  }
+
+  /** The homeserver's signed record on the Pubky network, or null when the relay has none. */
+  async homeserverRecord(): Promise<SignedRecord | null> {
+    const relay = this.config.testnetHost ? `http://${this.config.testnetHost}:${TESTNET_PKARR_PORT}` : PKARR_RELAY;
+    const response = await fetch(`${relay}/${this.config.homeserver}`, { cache: 'no-store' });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`The relay could not serve the record (${response.status})`);
+    return parseSignedRecord(new Uint8Array(await response.arrayBuffer()), this.config.homeserver);
+  }
+
+  /**
+   * One person's newest public events, newest first, at most `limit`; with a
+   * `cursor` (from the previous page) the ones before it. One request each:
+   * the event stream answers a batch and closes.
+   */
+  async ownEvents(
+    pubky: string,
+    cursor: string | null,
+    limit: number,
+  ): Promise<{ events: FeedEvent[]; cursor: string | null }> {
+    const user = cursor ? `${pubky}:${encodeURIComponent(cursor)}` : pubky;
+    const response = await this.homeserverFetch(`/events-stream?user=${user}&reverse=true&limit=${limit}`);
+    if (!response.ok) throw new Error(`The homeserver could not list your changes (${response.status})`);
+    return parseEventStream(await response.text());
+  }
+
+  /** The public events after `cursor` ('0' for the start of the feed), oldest first, at most `limit`. */
+  async eventsAfter(cursor: string, limit: number): Promise<{ events: FeedEvent[]; cursor: string | null }> {
+    const response = await this.homeserverFetch(`/events/?cursor=${encodeURIComponent(cursor)}&limit=${limit}`);
+    if (!response.ok) throw new Error(`The homeserver could not list its events (${response.status})`);
+    return parseFeed(await response.text());
+  }
+
+  /**
+   * The newest `max` public events, oldest first, with the cursor to poll
+   * for more and, when the whole feed fit in one page, how long it is. A
+   * longer feed is reached from its end: a few one-line probes find the
+   * last event's position, then one request reads the window before it.
+   */
+  async latestEvents(max: number): Promise<{ events: FeedEvent[]; cursor: string; total: number | null }> {
+    const first = await this.eventsAfter('0', FEED_PAGE);
+    if (first.events.length < FEED_PAGE) {
+      return { events: first.events.slice(-max), cursor: first.cursor ?? '0', total: first.events.length };
+    }
+    const end = await this.feedEnd(Number(first.cursor));
+    const window = await this.eventsAfter(String(Math.max(0, end - max)), max);
+    return { events: window.events, cursor: window.cursor ?? String(end), total: null };
+  }
+
+  /** The position of the feed's last event, knowing the event at `known` exists. Positions grow by one per event. */
+  private async feedEnd(known: number): Promise<number> {
+    // The first event after `position`, or null when there is none.
+    const next = async (position: number) => {
+      const page = await this.eventsAfter(String(position), 1);
+      return page.cursor === null ? null : Number(page.cursor);
+    };
+    let low = known;
+    let high = known * 2;
+    for (let found = await next(high); found !== null; found = await next(high)) {
+      low = found;
+      high *= 2;
+    }
+    // Now the last event is at low or later, and none is after high.
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      const found = await next(middle);
+      if (found === null) high = middle;
+      else low = found;
+    }
+    return low;
   }
 
   private homeserverFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -246,6 +339,16 @@ function parseListing(text: string): PublicFile[] {
       const path = url.slice(url.indexOf('/pub/') + '/pub/'.length);
       return { url, path, app: path.includes('/') ? path.slice(0, path.indexOf('/')) : '' };
     });
+}
+
+/** `https://host[:port]` of a response's URL, or null when it is not an http(s) URL. */
+function originOf(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 /** `pubky://<user>/pub/x` as this homeserver's path-addressed route, `/storage/<user>/pub/x`. */
