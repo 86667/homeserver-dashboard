@@ -6,6 +6,7 @@ import {
   GenerateInviteResponse,
   SignupTokenState,
   SignupTokensResponse,
+  UserQuota,
   UserQuotaPatch,
   UserQuotaResponse,
 } from './admin.types';
@@ -104,12 +105,19 @@ export class AdminService {
     await this.request(`/users/${encodeURIComponent(pubkey)}/quota`, { method: 'PATCH', body: JSON.stringify(patch) });
   }
 
-  async generateInvite(): Promise<GenerateInviteResponse> {
-    // Use API route which handles token server-side
-    const res = await fetch(`${this.baseUrl}/generate_signup_token`, { cache: 'no-store' });
+  /** A new invite code; with `limits`, one whose user gets those limits instead of the homeserver's defaults. */
+  async generateInvite(limits?: UserQuota): Promise<GenerateInviteResponse> {
+    // Its own API route, which turns the homeserver's plain-text code into JSON.
+    const withLimits = limits !== undefined && Object.keys(limits).length > 0;
+    const res = await fetch(`${this.baseUrl}/generate_signup_token`, {
+      cache: 'no-store',
+      ...(withLimits
+        ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(limits) }
+        : {}),
+    });
     if (!res.ok) {
       const error = await res.json().catch(() => ({ error: `Failed to generate invite: ${res.status}` }));
-      throw new Error(error.error || `Failed to generate invite: ${res.status}`);
+      throw new Error(error.message || error.error || `Failed to generate invite: ${res.status}`);
     }
     const data = await res.json();
     return { token: data.token };

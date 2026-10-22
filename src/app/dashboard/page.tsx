@@ -16,6 +16,7 @@ import { InviteManagement } from '@/components/organisms/InviteManagement';
 import { DashboardLogs } from '@/components/organisms/DashboardLogs';
 import { SignupTokenList } from '@/components/organisms/SignupTokenList';
 import { UserEditor } from '@/components/organisms/UserEditor';
+import type { UserQuota } from '@/services/admin/admin.types';
 import {
   Github,
   BookOpen,
@@ -94,7 +95,6 @@ function Dashboard() {
     isDisablingUser,
     isEnablingUser,
     generateInviteError,
-    generatedInvites,
   } = useAdminActions();
   const {
     items: disabledUsers,
@@ -156,17 +156,19 @@ function Dashboard() {
     if (!open) setCloudflareRefreshKey((n) => n + 1);
   }, []);
 
-  const handleGenerateInvite = useCallback(async () => {
-    // The failure is surfaced via generateInviteError; swallowing the throw
-    // here keeps it out of the console as an unhandled rejection.
-    try {
-      await generateInvite();
-    } catch {
-      return;
-    }
-    setSignupTokensRefreshKey((n) => n + 1);
-    await refetchInfo();
-  }, [generateInvite, refetchInfo]);
+  const handleGenerateInvite = useCallback(
+    async (limits?: UserQuota) => {
+      // The failure is surfaced via generateInviteError; the throw is passed on
+      // so the card knows nothing was created.
+      try {
+        return await generateInvite(limits);
+      } finally {
+        setSignupTokensRefreshKey((n) => n + 1);
+        await refetchInfo();
+      }
+    },
+    [generateInvite, refetchInfo],
+  );
 
   const handleDisableUser = useCallback(
     async (pubkey: string) => {
@@ -387,7 +389,6 @@ function Dashboard() {
 
             <TabsContent value="invites" className="space-y-4">
               <InviteManagement
-                invites={generatedInvites}
                 onGenerate={handleGenerateInvite}
                 isGenerating={isGeneratingInvite}
                 generateError={generateInviteError?.message ?? null}
@@ -397,7 +398,6 @@ function Dashboard() {
                 homeserverPubkey={info?.public_key ?? info?.pubkey}
                 onRefreshStats={refreshInfo}
                 accountPageUrl={accountPageUrl}
-                codesListed={signupTokenList === 'available'}
               />
               {signupTokenList === 'available' && (
                 <SignupTokenList accountPageUrl={accountPageUrl} refreshKey={signupTokensRefreshKey} />

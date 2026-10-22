@@ -35,6 +35,31 @@ describe('AdminService', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users/disabled?limit=5&cursor=abc');
   });
 
+  it('generateInvite asks with GET by default and posts limits when given', async () => {
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify({ token: 'AAAA-BBBB' }), { status: 200, headers: jsonHeaders }),
+    );
+    await expect(service.generateInvite()).resolves.toEqual({ token: 'AAAA-BBBB' });
+    expect(fetchMock.mock.calls[0][1].method).toBeUndefined();
+    await service.generateInvite({});
+    expect(fetchMock.mock.calls[1][1].method).toBeUndefined();
+    await service.generateInvite({ storage_quota_mb: 500 });
+    const [url, init] = fetchMock.mock.calls[2];
+    expect(url).toBe('/api/admin/generate_signup_token');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ storage_quota_mb: 500 });
+  });
+
+  it("generateInvite surfaces the route's message", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ type: 'upstream_error', error: 'Invalid rate' }), {
+        status: 422,
+        headers: jsonHeaders,
+      }),
+    );
+    await expect(service.generateInvite({ rate_read: '10mb' })).rejects.toThrow('Invalid rate');
+  });
+
   it('getUserQuota reads the quota route', async () => {
     const body = { effective: { storage_quota_mb: 500 }, overrides: {} };
     fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status: 200, headers: jsonHeaders }));

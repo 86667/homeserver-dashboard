@@ -80,6 +80,42 @@ function parseField(key: QuotaField, raw: string): UserQuotaPatch[QuotaField] {
 }
 
 /**
+ * The limits for a new invite: every filled-in field, parsed. Empty fields
+ * (the homeserver default) are left out. Throws when a field cannot be read.
+ */
+export function quotaLimits(text: QuotaText): UserQuota {
+  const limits: UserQuota = {};
+  for (const { key } of QUOTA_FIELDS) {
+    const value = parseField(key, text[key]);
+    if (value !== null) (limits as Record<QuotaField, unknown>)[key] = value;
+  }
+  return limits;
+}
+
+/** Each limit as people read it, e.g. "Storage 500 MB", "Writable paths: none (read-only)". */
+export function describeLimits(limits: UserQuota): string[] {
+  const lines: string[] = [];
+  for (const { key, label } of QUOTA_FIELDS) {
+    const value = limits[key];
+    if (value === undefined) continue;
+    if (key === 'allowed_write_paths') {
+      const paths = value as string[];
+      lines.push(paths.length === 0 ? `${label}: none (read-only)` : `${label}: ${paths.join(', ')}`);
+    } else if (key === 'storage_quota_mb') {
+      lines.push(`Storage: ${value === 'unlimited' ? 'unlimited' : `${value} MB`}`);
+    } else {
+      lines.push(`${label}: ${value}`);
+    }
+  }
+  return lines;
+}
+
+/** The editor's fields all empty: every limit at the homeserver default. */
+export function emptyQuotaText(): QuotaText {
+  return quotaText({});
+}
+
+/**
  * The PATCH for the fields whose text changed since `loaded`. Throws when a
  * changed field cannot be read, or when nothing changed.
  */

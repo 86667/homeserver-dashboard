@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AdminService } from '@/services/admin/admin';
 import type { UserQuotaResponse } from '@/services/admin/admin.types';
-import { QUOTA_FIELDS, type QuotaText, defaultText, quotaPatch, quotaText } from './quota-form';
+import { QUOTA_FIELDS, type QuotaText, defaultText, quotaPatch, quotaText } from '@/lib/quota-form';
 
 export interface UserEditorProps {
   /** Opens a user from elsewhere (e.g. "Manage" on a used invite code); a new nonce reopens the same one. */

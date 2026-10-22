@@ -28,6 +28,8 @@ export type SignupToken = {
   created_at: string;
   used_at: string | null;
   used_by: string | null;
+  /** The limits the code carries, as given when it was created; empty = the homeserver's defaults. Reported by homeservers after 0.16.2. */
+  quota?: UserQuota;
 };
 export type SignupTokensResponse = {
   items: SignupToken[];

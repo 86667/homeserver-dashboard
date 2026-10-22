@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaultText, quotaPatch, quotaText } from './quota-form';
+import { defaultText, describeLimits, emptyQuotaText, quotaLimits, quotaPatch, quotaText } from './quota-form';
 
 const loaded = quotaText({ storage_quota_mb: 500, allowed_write_paths: ['/pub/app/'] });
 
@@ -56,5 +56,32 @@ describe('quotaPatch', () => {
 
   it('refuses an empty change', () => {
     expect(() => quotaPatch(loaded, { ...loaded, storage_quota_mb: ' 500 ' })).toThrow('Nothing changed.');
+  });
+});
+
+describe('quotaLimits', () => {
+  it('parses the filled-in fields and leaves the rest out', () => {
+    expect(quotaLimits({ ...emptyQuotaText(), storage_quota_mb: '500', allowed_write_paths: 'none' })).toEqual({
+      storage_quota_mb: 500,
+      allowed_write_paths: [],
+    });
+    expect(quotaLimits(emptyQuotaText())).toEqual({});
+  });
+
+  it('rejects what it cannot read', () => {
+    expect(() => quotaLimits({ ...emptyQuotaText(), rate_read_burst: 'lots' })).toThrow(/above zero/);
+  });
+});
+
+describe('describeLimits', () => {
+  it('reads each limit back in words', () => {
+    expect(
+      describeLimits({ storage_quota_mb: 500, rate_read: '10mb/s', rate_read_burst: 50, allowed_write_paths: [] }),
+    ).toEqual(['Storage: 500 MB', 'Writable paths: none (read-only)', 'Download rate: 10mb/s', 'Download burst: 50']);
+    expect(describeLimits({ storage_quota_mb: 'unlimited', allowed_write_paths: ['/pub/a/'] })).toEqual([
+      'Storage: unlimited',
+      'Writable paths: /pub/a/',
+    ]);
+    expect(describeLimits({})).toEqual([]);
   });
 });

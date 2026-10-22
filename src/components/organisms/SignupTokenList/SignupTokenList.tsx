@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, Copy, Link2, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, ChevronDown, ChevronUp, Copy, Link2, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { useSignupTokens } from '@/hooks/admin';
 import { useCopyFeedback } from '@/hooks/useCopyFeedback';
 import { formatUtcTimestamp, shortPubky } from '@/lib/format';
 import { inviteLink } from '@/lib/invite-link';
+import { describeLimits } from '@/lib/quota-form';
 import { cn } from '@/lib/utils';
 import type { SignupToken } from '@/services/admin/admin.types';
 
@@ -21,6 +22,9 @@ export interface SignupTokenListProps {
 }
 
 type Filter = 'unused' | 'used';
+
+/** Codes shown at first, and added by each "Show more". The list scrolls, so the page does not grow. */
+const VISIBLE_STEP = 10;
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'unused', label: 'Unused' },
@@ -35,8 +39,16 @@ const FILTERS: { value: Filter; label: string }[] = [
  */
 export function SignupTokenList({ accountPageUrl, refreshKey = 0 }: SignupTokenListProps) {
   const [filter, setFilter] = useState<Filter>('unused');
-  const { items, nextCursor, isLoading, isLoadingMore, error, refetch, loadMore } = useSignupTokens(filter, refreshKey);
+  const { items, isLoading, error, refetch } = useSignupTokens(filter, refreshKey);
   const { copiedKey, copy } = useCopyFeedback();
+  const [visible, setVisible] = useState(VISIBLE_STEP);
+  const [limitsOpenFor, setLimitsOpenFor] = useState<string | null>(null);
+  // Back to the top of a fresh list.
+  useEffect(() => {
+    setVisible(VISIBLE_STEP);
+    setLimitsOpenFor(null);
+  }, [filter, refreshKey, items]);
+  const reportsLimits = items.some((item) => item.quota !== undefined);
 
   const copyButton = (value: string, key: string, label: string, icon: 'copy' | 'link') => (
     <Button
@@ -58,43 +70,67 @@ export function SignupTokenList({ accountPageUrl, refreshKey = 0 }: SignupTokenL
   );
 
   const row = (item: SignupToken) => (
-    <div
-      key={item.token}
-      className="flex flex-col gap-2 rounded-lg border bg-muted/40 p-3 sm:flex-row sm:items-center sm:justify-between"
-      data-testid="signup-token-row"
-    >
-      <div className="min-w-0 flex-1">
-        <code className="font-mono text-sm">{item.token}</code>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {item.used_at ? (
-            <>
-              Used {formatUtcTimestamp(item.used_at)}
-              {item.used_by && (
-                <>
-                  {' '}
-                  by{' '}
-                  <code className="font-mono" title={item.used_by}>
-                    {shortPubky(item.used_by)}
-                  </code>
-                </>
-              )}
-            </>
+    <div key={item.token} className="rounded-lg border bg-muted/40 p-3" data-testid="signup-token-row">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <code className="font-mono text-sm">{item.token}</code>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {item.used_at ? (
+              <>
+                Used {formatUtcTimestamp(item.used_at)}
+                {item.used_by && (
+                  <>
+                    {' '}
+                    by{' '}
+                    <code className="font-mono" title={item.used_by}>
+                      {shortPubky(item.used_by)}
+                    </code>
+                  </>
+                )}
+              </>
+            ) : (
+              <>Created {formatUtcTimestamp(item.created_at)}</>
+            )}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          {item.used_by ? (
+            copyButton(item.used_by, `pubky-${item.token}`, 'Copy pubky', 'copy')
           ) : (
-            <>Created {formatUtcTimestamp(item.created_at)}</>
+            <>
+              {copyButton(item.token, `code-${item.token}`, 'Copy code', 'copy')}
+              {accountPageUrl &&
+                copyButton(inviteLink(accountPageUrl, item.token), `link-${item.token}`, 'Copy sign-up link', 'link')}
+            </>
           )}
-        </p>
+          {item.quota !== undefined && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 px-2 text-xs"
+              onClick={() => setLimitsOpenFor((open) => (open === item.token ? null : item.token))}
+              aria-expanded={limitsOpenFor === item.token}
+              aria-label={limitsOpenFor === item.token ? 'Hide limits' : 'Show limits'}
+            >
+              {limitsOpenFor === item.token ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+              Limits
+            </Button>
+          )}
+        </div>
       </div>
-      <div className="flex shrink-0 gap-1">
-        {item.used_by ? (
-          copyButton(item.used_by, `pubky-${item.token}`, 'Copy pubky', 'copy')
-        ) : (
-          <>
-            {copyButton(item.token, `code-${item.token}`, 'Copy code', 'copy')}
-            {accountPageUrl &&
-              copyButton(inviteLink(accountPageUrl, item.token), `link-${item.token}`, 'Copy sign-up link', 'link')}
-          </>
-        )}
-      </div>
+      {item.quota !== undefined && limitsOpenFor === item.token && (
+        <ul className="mt-2 space-y-0.5 border-t pt-2 text-xs text-muted-foreground" data-testid="signup-token-limits">
+          {describeLimits(item.quota).length === 0 ? (
+            <li>The homeserver&apos;s default limits.</li>
+          ) : (
+            describeLimits(item.quota).map((line) => <li key={line}>{line}</li>)
+          )}
+        </ul>
+      )}
     </div>
   );
 
@@ -152,6 +188,12 @@ export function SignupTokenList({ accountPageUrl, refreshKey = 0 }: SignupTokenL
           </Alert>
         )}
 
+        {!isLoading && items.length > 0 && !reportsLimits && (
+          <p className="text-xs text-muted-foreground/70" data-testid="limits-not-reported">
+            This homeserver does not report a code&apos;s limits; newer ones do.
+          </p>
+        )}
+
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-14 w-full" />
@@ -162,19 +204,21 @@ export function SignupTokenList({ accountPageUrl, refreshKey = 0 }: SignupTokenL
             {filter === 'unused' ? 'No unused codes.' : 'No code has been used yet.'}
           </p>
         ) : (
-          <div className="space-y-2">{items.map(row)}</div>
-        )}
-
-        {nextCursor && !isLoading && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void loadMore()}
-            disabled={isLoadingMore}
-            className="w-full sm:w-auto"
-          >
-            {isLoadingMore ? 'Loading...' : 'Load more'}
-          </Button>
+          // About five rows tall; the rest scrolls, and "Show more" sits at the bottom of the scroll.
+          <div className="max-h-[23rem] space-y-2 overflow-y-auto pr-1" data-testid="signup-token-scroll">
+            {items.slice(0, visible).map(row)}
+            {items.length > visible && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVisible((n) => n + VISIBLE_STEP)}
+                className="w-full sm:w-auto"
+                data-testid="signup-token-more"
+              >
+                Show more ({items.length - visible} left)
+              </Button>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>
