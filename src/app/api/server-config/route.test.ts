@@ -89,6 +89,31 @@ describe('server-config route', () => {
       expect(new Date(payload.mtime).getTime()).not.toBeNaN();
     });
 
+    it('reports the default limits the config sets, and nothing for the rest', async () => {
+      const { GET } = await loadRoute();
+      await fs.writeFile(configPath, VALID_CONFIG, 'utf-8');
+      expect((await (await GET()).json()).defaultQuota).toEqual({});
+
+      await fs.writeFile(
+        configPath,
+        `${VALID_CONFIG}default_quota_mb = 500\n\n[default_quotas]\nrate_read = "10mb/s"\nrate_write_burst = 20\n`,
+        'utf-8',
+      );
+      expect((await (await GET()).json()).defaultQuota).toEqual({
+        storage_quota_mb: 500,
+        rate_read: '10mb/s',
+        rate_write_burst: 20,
+      });
+
+      // The older place for the storage default.
+      await fs.writeFile(
+        configPath,
+        VALID_CONFIG.replace('[general]', '[general]\nuser_storage_quota_mb = 250'),
+        'utf-8',
+      );
+      expect((await (await GET()).json()).defaultQuota).toEqual({ storage_quota_mb: 250 });
+    });
+
     it('redacts admin_password and database_url', async () => {
       await fs.writeFile(configPath, VALID_CONFIG, 'utf-8');
       const { GET } = await loadRoute();

@@ -97,10 +97,11 @@ describe('SignupTokenList', () => {
     expect(screen.queryByTestId('limits-not-reported')).toBeNull();
     const [first, second] = screen.getAllByRole('button', { name: 'Show limits' });
     fireEvent.click(first);
-    expect(screen.getByTestId('signup-token-limits').textContent).toContain('Storage: 500 MB');
-    expect(screen.getByTestId('signup-token-limits').textContent).toContain('/pub/site/');
+    const limits = await screen.findByTestId('signup-token-limits');
+    expect(limits.textContent).toContain('Storage: 500 MB');
+    expect(limits.textContent).toContain('/pub/site/');
     fireEvent.click(second);
-    expect(screen.getByTestId('signup-token-limits').textContent).toContain('default limits');
+    await waitFor(() => expect(screen.getByTestId('signup-token-limits').textContent).toContain('default limits'));
 
     unused = [UNUSED];
     render(<SignupTokenList accountPageUrl={null} refreshKey={1} />);

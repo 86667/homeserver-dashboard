@@ -62,6 +62,21 @@ describe('InviteManagement limits', () => {
     expect(screen.getByTestId('invite-created-code').textContent).toBe(INVITE);
   });
 
+  it("shows the homeserver's defaults in the empty fields when they are known", async () => {
+    const { rerender } = render(<InviteManagement onGenerate={generate()} />);
+    fireEvent.click(screen.getByTestId('invite-limits-toggle'));
+    expect((screen.getByLabelText('Storage (MB)') as HTMLInputElement).placeholder).toBe('homeserver default');
+    rerender(
+      <InviteManagement onGenerate={generate()} homeserverDefaults={{ storage_quota_mb: 500, rate_read: '10mb/s' }} />,
+    );
+    const placeholder = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).placeholder;
+    expect(placeholder('Storage (MB)')).toBe('500 (homeserver default)');
+    expect(placeholder('Download rate')).toBe('10mb/s (homeserver default)');
+    expect(placeholder('Upload rate')).toBe('unlimited (homeserver default)');
+    expect(placeholder('Download burst')).toBe('same as rate (homeserver default)');
+    expect(placeholder('Writable paths')).toBe('anywhere (homeserver default)');
+  });
+
   it('ignores the limits while they are hidden', async () => {
     const onGenerate = generate();
     render(<InviteManagement onGenerate={onGenerate} />);

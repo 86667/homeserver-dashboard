@@ -43,6 +43,45 @@ function redactConfig(content: string): string {
     .join('\n');
 }
 
+/** The homeserver's default limits for new users, as far as config.toml sets them. */
+type DefaultQuota = {
+  storage_quota_mb?: number;
+  rate_read?: string;
+  rate_write?: string;
+  rate_read_burst?: number;
+  rate_write_burst?: number;
+};
+
+/**
+ * Reads the default limits out of a config: `[storage].default_quota_mb` (or
+ * the older `[general].user_storage_quota_mb`) and the `[default_quotas]`
+ * rates and bursts. A field the config does not set is left out: the
+ * homeserver then applies no limit (and a burst equal to its rate). An
+ * unreadable config gives an empty object, not an error: the limits are a
+ * nicety, the config view is the point.
+ */
+function defaultQuotaOf(content: string): DefaultQuota {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = parseToml(content) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+  const table = (name: string) => (parsed[name] ?? {}) as Record<string, unknown>;
+  const number = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+  const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : undefined);
+  const storage = number(table('storage').default_quota_mb) ?? number(table('general').user_storage_quota_mb);
+  const quotas = table('default_quotas');
+  const defaults: DefaultQuota = {
+    storage_quota_mb: storage,
+    rate_read: text(quotas.rate_read),
+    rate_write: text(quotas.rate_write),
+    rate_read_burst: number(quotas.rate_read_burst),
+    rate_write_burst: number(quotas.rate_write_burst),
+  };
+  return Object.fromEntries(Object.entries(defaults).filter(([, value]) => value !== undefined));
+}
+
 function computeChecksum(content: string): string {
   return 'sha256:' + createHash('sha256').update(content).digest('hex');
 }
@@ -174,6 +213,7 @@ async function handleGet() {
       });
       return NextResponse.json({
         config: redactConfig(raw),
+        defaultQuota: defaultQuotaOf(raw),
         checksum,
         mtime: stat.mtime.toISOString(),
         writable,

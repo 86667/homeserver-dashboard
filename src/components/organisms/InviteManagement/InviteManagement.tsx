@@ -15,7 +15,14 @@ import { usePolling } from '@/hooks/usePolling';
 import { QRCodeSVG } from 'qrcode.react';
 import { inviteLink } from '@/lib/invite-link';
 import { PUBKY_RING_URL } from '@/lib/pubky-ring';
-import { QUOTA_FIELDS, type QuotaText, describeLimits, emptyQuotaText, quotaLimits } from '@/lib/quota-form';
+import {
+  QUOTA_FIELDS,
+  type QuotaText,
+  defaultText,
+  describeLimits,
+  emptyQuotaText,
+  quotaLimits,
+} from '@/lib/quota-form';
 import type { UserQuota } from '@/services/admin/admin.types';
 
 /** How often the signup-code stats are re-read while a new invite is on screen. */
@@ -38,6 +45,8 @@ export interface InviteManagementProps {
   onRefreshStats?: () => void | Promise<void>;
   /** The public account page (ACCOUNT_PAGE_URL). With it, each invite also gets a link that opens in any browser. */
   accountPageUrl?: string | null;
+  /** The homeserver's default limits (from its config.toml), shown in the empty fields; null when not readable. */
+  homeserverDefaults?: UserQuota | null;
 }
 
 /** The invite just created, shown once: the homeserver does not display codes again. */
@@ -71,6 +80,7 @@ export function InviteManagement({
   homeserverPubkey,
   onRefreshStats,
   accountPageUrl,
+  homeserverDefaults,
 }: InviteManagementProps) {
   const { copiedKey, copy } = useCopyFeedback();
   const [created, setCreated] = useState<Created | null>(null);
@@ -245,7 +255,11 @@ export function InviteManagement({
                       id={`invite-${key}`}
                       value={limitsText[key]}
                       onChange={(event) => setLimitsText({ ...limitsText, [key]: event.target.value })}
-                      placeholder="homeserver default"
+                      placeholder={
+                        homeserverDefaults
+                          ? `${defaultText(key, homeserverDefaults)} (homeserver default)`
+                          : 'homeserver default'
+                      }
                       spellCheck={false}
                       autoComplete="off"
                     />

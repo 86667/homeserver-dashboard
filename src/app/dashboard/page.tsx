@@ -133,6 +133,8 @@ function Dashboard() {
   const [signupTokenList, setSignupTokenList] = useState<TabAvailability>('unknown');
   const [signupTokensRefreshKey, setSignupTokensRefreshKey] = useState(0);
   const [configWritable, setConfigWritable] = useState(false);
+  // The homeserver's default limits, from config.toml when the dashboard can read it; null when it cannot.
+  const [homeserverDefaults, setHomeserverDefaults] = useState<UserQuota | null>(null);
 
   const handleSettingsClick = useCallback(() => {
     setIsConfigDialogOpen(true);
@@ -243,14 +245,17 @@ function Dashboard() {
         }
 
         let isConfigWritable = false;
+        let defaults: UserQuota | null = null;
         if (configRes.ok) {
-          const configData = (await configRes.json()) as { writable?: boolean };
+          const configData = (await configRes.json()) as { writable?: boolean; defaultQuota?: UserQuota };
           isConfigWritable = Boolean(configData.writable);
+          defaults = configData.defaultQuota ?? null;
         }
 
         if (!cancelled) {
           setCanOpenSettings(configRes.ok || isCloudflareSupported);
           setConfigWritable(isConfigWritable);
+          setHomeserverDefaults(defaults);
           setLogsTab((prev) => (logsRes.ok ? 'available' : downgrade(prev)));
           setUsersTab((prev) => (disabledUsersRes.ok ? 'available' : downgrade(prev)));
           setSignupTokenList((prev) => (signupTokensRes.ok ? 'available' : downgrade(prev)));
@@ -398,6 +403,7 @@ function Dashboard() {
                 homeserverPubkey={info?.public_key ?? info?.pubkey}
                 onRefreshStats={refreshInfo}
                 accountPageUrl={accountPageUrl}
+                homeserverDefaults={homeserverDefaults}
               />
               {signupTokenList === 'available' && (
                 <SignupTokenList accountPageUrl={accountPageUrl} refreshKey={signupTokensRefreshKey} />
