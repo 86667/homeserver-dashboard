@@ -20,3 +20,16 @@ export type DisabledUsersResponse = {
   next_cursor: string | null;
 };
 export type GenerateInviteResponse = { token: string };
+
+/** Admin `GET /signup_tokens` (pubky-homeserver 0.14+). Timestamps are UTC without a zone. */
+export type SignupTokenState = 'unused' | 'used' | 'all';
+export type SignupToken = {
+  token: string;
+  created_at: string;
+  used_at: string | null;
+  used_by: string | null;
+};
+export type SignupTokensResponse = {
+  items: SignupToken[];
+  next_cursor: string | null;
+};

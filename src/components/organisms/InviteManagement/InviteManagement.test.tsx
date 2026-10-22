@@ -32,6 +32,11 @@ describe('InviteManagement session-only list', () => {
     expect(screen.getByText(/Codes stay valid after a reload, but they cannot be displayed again/)).toBeTruthy();
   });
 
+  it('says the codes are listed below when the homeserver can list them', () => {
+    render(<InviteManagement invites={['AAAA-BBBB']} onGenerate={noop} codesListed />);
+    expect(screen.getByTestId('invite-session-note').textContent).toContain('listed under Invite codes below');
+  });
+
   it('empty state says no invites this session, even when the stats show existing codes', () => {
     render(<InviteManagement invites={[]} onGenerate={noop} signupCodesTotal={5} signupCodesUnused={2} />);
     // 5 codes exist on the server; the session list must not claim "none yet".

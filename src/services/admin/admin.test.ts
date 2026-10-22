@@ -35,6 +35,17 @@ describe('AdminService', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users/disabled?limit=5&cursor=abc');
   });
 
+  it('getSignupTokens passes state, limit and cursor', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200, headers: jsonHeaders }),
+    );
+    await expect(service.getSignupTokens('used', 20, 'AAAA-BBBB-CCCC')).resolves.toEqual({
+      items: [],
+      next_cursor: null,
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/signup_tokens?state=used&limit=20&cursor=AAAA-BBBB-CCCC');
+  });
+
   it('surfaces the JSON error message and status on failure', async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ error: 'Invalid admin password' }), { status: 401, headers: jsonHeaders }),

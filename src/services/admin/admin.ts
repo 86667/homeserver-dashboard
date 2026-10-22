@@ -4,6 +4,8 @@ import {
   DeleteUrlRequest,
   DisableUserRequest,
   GenerateInviteResponse,
+  SignupTokenState,
+  SignupTokensResponse,
 } from './admin.types';
 
 /**
@@ -82,6 +84,13 @@ export class AdminService {
     params.set('limit', String(limit));
     if (cursor) params.set('cursor', cursor);
     return this.request<DisabledUsersResponse>(`/users/disabled?${params.toString()}`);
+  }
+
+  /** The homeserver's invite codes, `state` first, newest first, a page at a time. */
+  async getSignupTokens(state: SignupTokenState, limit = 50, cursor?: string): Promise<SignupTokensResponse> {
+    const params = new URLSearchParams({ state, limit: String(limit) });
+    if (cursor) params.set('cursor', cursor);
+    return this.request<SignupTokensResponse>(`/signup_tokens?${params.toString()}`);
   }
 
   async generateInvite(): Promise<GenerateInviteResponse> {

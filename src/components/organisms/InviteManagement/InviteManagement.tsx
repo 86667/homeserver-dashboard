@@ -34,6 +34,8 @@ export interface InviteManagementProps {
   onRefreshStats?: () => void | Promise<void>;
   /** The public account page (ACCOUNT_PAGE_URL). With it, each invite also gets a link that opens in any browser. */
   accountPageUrl?: string | null;
+  /** The homeserver can list its codes again (shown below this card), so they are not lost on reload. */
+  codesListed?: boolean;
 }
 
 /** "Get Pubky Ring" assist, shown wherever the app is a prerequisite. */
@@ -65,6 +67,7 @@ export function InviteManagement({
   homeserverPubkey,
   onRefreshStats,
   accountPageUrl,
+  codesListed,
 }: InviteManagementProps) {
   const { copiedKey, copy } = useCopyFeedback();
   const [expandedInviteIndex, setExpandedInviteIndex] = useState<number | null>(null);
@@ -214,9 +217,10 @@ export function InviteManagement({
             is the full history the stats above describe. */}
         <div>
           <h3 className="mb-1 text-sm font-medium text-foreground">Created this session</h3>
-          <p className="mb-3 text-xs text-muted-foreground/70">
-            Codes stay valid after a reload, but they cannot be displayed again. Share or save them while they are shown
-            here.
+          <p className="mb-3 text-xs text-muted-foreground/70" data-testid="invite-session-note">
+            {codesListed
+              ? 'Codes stay valid after a reload. Every code, used or not, is also listed under Invite codes below.'
+              : 'Codes stay valid after a reload, but they cannot be displayed again. Share or save them while they are shown here.'}
           </p>
           {invites.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-lg border border-dashed bg-muted/30 px-4 py-12 text-center">

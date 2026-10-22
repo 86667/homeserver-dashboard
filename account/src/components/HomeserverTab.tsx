@@ -60,6 +60,8 @@ export function HomeserverTab({ homeserver, state, inviteRequired, notSetUp }: H
 function Facts({ homeserver, state, inviteRequired }: Omit<HomeserverTabProps, 'notSetUp'>) {
   const { info, record } = state;
   const [viewerOpen, setViewerOpen] = useState(false);
+  // Read once per visit: the record's age need not tick.
+  const [now] = useState(() => Date.now());
   const address = info.status === 'done' ? info.value.address : null;
   const published = record.status === 'done' ? record.value : null;
   const { pubkyAddress } = published ? homeserverAddresses(published) : { pubkyAddress: null };
@@ -204,8 +206,7 @@ function Facts({ homeserver, state, inviteRequired }: Omit<HomeserverTabProps, '
                 title="A record signed by this homeserver's key is on the Pubky relay."
                 data-testid="record-published"
               >
-                <CircleCheckBig className="h-3 w-3" /> Published{' '}
-                {formatAge(Date.now() - published.publishedAt.getTime())}
+                <CircleCheckBig className="h-3 w-3" /> Published {formatAge(now - published.publishedAt.getTime())}
               </span>
               {published.records.length > 0 && (
                 <Button
@@ -224,7 +225,13 @@ function Facts({ homeserver, state, inviteRequired }: Omit<HomeserverTabProps, '
       </Row>
 
       {published && (
-        <RecordViewer open={viewerOpen} onOpenChange={setViewerOpen} record={published} homeserver={homeserver} />
+        <RecordViewer
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+          record={published}
+          homeserver={homeserver}
+          now={now}
+        />
       )}
     </>
   );
@@ -265,11 +272,13 @@ function RecordViewer({
   onOpenChange,
   record,
   homeserver,
+  now,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   record: SignedRecord;
   homeserver: string;
+  now: number;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -284,7 +293,7 @@ function RecordViewer({
           <p className="text-muted-foreground">
             <CircleCheckBig className="mr-1 inline h-3 w-3 align-[-2px] text-brand" />
             This record is signed by the homeserver&apos;s key; no one else can change it. Published{' '}
-            {formatAge(Date.now() - record.publishedAt.getTime())}.
+            {formatAge(now - record.publishedAt.getTime())}.
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-left" aria-label="Published PKARR records" data-testid="record-entries">

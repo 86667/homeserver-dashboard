@@ -14,6 +14,7 @@ import { DisabledUsersManagement } from '@/components/organisms/DisabledUsersMan
 import { ConfigDialog } from '@/components/organisms/ConfigDialog';
 import { InviteManagement } from '@/components/organisms/InviteManagement';
 import { DashboardLogs } from '@/components/organisms/DashboardLogs';
+import { SignupTokenList } from '@/components/organisms/SignupTokenList';
 import {
   Github,
   BookOpen,
@@ -112,6 +113,9 @@ function Dashboard() {
   const [canOpenSettings, setCanOpenSettings] = useState(true);
   const [logsTab, setLogsTab] = useState<TabAvailability>('unknown');
   const [usersTab, setUsersTab] = useState<TabAvailability>('unknown');
+  // The invite code list on the Invites tab needs the admin listing route (homeserver 0.14+).
+  const [signupTokenList, setSignupTokenList] = useState<TabAvailability>('unknown');
+  const [signupTokensRefreshKey, setSignupTokensRefreshKey] = useState(0);
   const [configWritable, setConfigWritable] = useState(false);
 
   const handleSettingsClick = useCallback(() => {
@@ -144,6 +148,7 @@ function Dashboard() {
     } catch {
       return;
     }
+    setSignupTokensRefreshKey((n) => n + 1);
     await refetchInfo();
   }, [generateInvite, refetchInfo]);
 
@@ -193,13 +198,16 @@ function Dashboard() {
     //   - /api/logs - 2xx means the log file is readable, drives the Logs tab
     //   - /api/admin/users/disabled - 2xx means the homeserver exposes the
     //     disabled-users listing endpoint (pubky-core PR #327); drives the Users tab
+    //   - /api/admin/signup_tokens - 2xx means the homeserver lists its invite
+    //     codes (0.14+); drives the code list on the Invites tab
     const detectAvailability = async () => {
       try {
-        const [configRes, cloudflareRes, logsRes, disabledUsersRes] = await Promise.all([
+        const [configRes, cloudflareRes, logsRes, disabledUsersRes, signupTokensRes] = await Promise.all([
           fetch('/api/server-config'),
           fetch('/api/cloudflare-config'),
           fetch('/api/logs?lines=0'),
           fetch('/api/admin/users/disabled?limit=1'),
+          fetch('/api/admin/signup_tokens?limit=1'),
         ]);
 
         let isCloudflareSupported = false;
@@ -223,6 +231,7 @@ function Dashboard() {
           setConfigWritable(isConfigWritable);
           setLogsTab((prev) => (logsRes.ok ? 'available' : downgrade(prev)));
           setUsersTab((prev) => (disabledUsersRes.ok ? 'available' : downgrade(prev)));
+          setSignupTokenList((prev) => (signupTokensRes.ok ? 'available' : downgrade(prev)));
         }
       } catch {
         // Keep settings button visible when detection fails to avoid blocking access.
@@ -230,6 +239,7 @@ function Dashboard() {
           setCanOpenSettings(true);
           setLogsTab(downgrade);
           setUsersTab(downgrade);
+          setSignupTokenList(downgrade);
         }
       }
     };
@@ -360,7 +370,11 @@ function Dashboard() {
                 homeserverPubkey={info?.public_key ?? info?.pubkey}
                 onRefreshStats={refreshInfo}
                 accountPageUrl={accountPageUrl}
+                codesListed={signupTokenList === 'available'}
               />
+              {signupTokenList === 'available' && (
+                <SignupTokenList accountPageUrl={accountPageUrl} refreshKey={signupTokensRefreshKey} />
+              )}
             </TabsContent>
 
             <TabsContent value="files" className="space-y-4">
