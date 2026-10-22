@@ -15,6 +15,7 @@ import { ConfigDialog } from '@/components/organisms/ConfigDialog';
 import { InviteManagement } from '@/components/organisms/InviteManagement';
 import { DashboardLogs } from '@/components/organisms/DashboardLogs';
 import { SignupTokenList } from '@/components/organisms/SignupTokenList';
+import { UserEditor } from '@/components/organisms/UserEditor';
 import {
   Github,
   BookOpen,
@@ -42,6 +43,19 @@ const dashboardVersion = packageJson.version;
 type TabAvailability = 'unknown' | 'available' | 'unavailable';
 
 const downgrade = (prev: TabAvailability): TabAvailability => (prev === 'unknown' ? 'unknown' : 'unavailable');
+
+/**
+ * Any well-formed pubky works for probing the per-user quota route: a missing
+ * user is a 404 with a body ("Not Found"), a homeserver without the route
+ * (before 0.16) answers an empty 404. This is the pubky-testnet homeserver's
+ * key, which is never a user on a real homeserver.
+ */
+const QUOTA_PROBE_PUBKY = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
+
+async function hasQuotaRoute(response: Response): Promise<boolean> {
+  if (response.ok || response.status === 400) return true;
+  return response.status === 404 && (await response.text()).trim() !== '';
+}
 
 function TabUnavailableNotice() {
   return (
@@ -113,6 +127,8 @@ function Dashboard() {
   const [canOpenSettings, setCanOpenSettings] = useState(true);
   const [logsTab, setLogsTab] = useState<TabAvailability>('unknown');
   const [usersTab, setUsersTab] = useState<TabAvailability>('unknown');
+  // The user editor on the Users tab needs the per-user quota route (homeserver 0.16+).
+  const [userEditor, setUserEditor] = useState<TabAvailability>('unknown');
   // The invite code list on the Invites tab needs the admin listing route (homeserver 0.14+).
   const [signupTokenList, setSignupTokenList] = useState<TabAvailability>('unknown');
   const [signupTokensRefreshKey, setSignupTokensRefreshKey] = useState(0);
@@ -200,15 +216,19 @@ function Dashboard() {
     //     disabled-users listing endpoint (pubky-core PR #327); drives the Users tab
     //   - /api/admin/signup_tokens - 2xx means the homeserver lists its invite
     //     codes (0.14+); drives the code list on the Invites tab
+    //   - /api/admin/users/{pubky}/quota - the per-user quota route (0.16+);
+    //     drives the user editor, which also shows the Users tab
     const detectAvailability = async () => {
       try {
-        const [configRes, cloudflareRes, logsRes, disabledUsersRes, signupTokensRes] = await Promise.all([
+        const [configRes, cloudflareRes, logsRes, disabledUsersRes, signupTokensRes, quotaRes] = await Promise.all([
           fetch('/api/server-config'),
           fetch('/api/cloudflare-config'),
           fetch('/api/logs?lines=0'),
           fetch('/api/admin/users/disabled?limit=1'),
           fetch('/api/admin/signup_tokens?limit=1'),
+          fetch(`/api/admin/users/${QUOTA_PROBE_PUBKY}/quota`),
         ]);
+        const isQuotaSupported = await hasQuotaRoute(quotaRes);
 
         let isCloudflareSupported = false;
         if (cloudflareRes.ok) {
@@ -232,6 +252,7 @@ function Dashboard() {
           setLogsTab((prev) => (logsRes.ok ? 'available' : downgrade(prev)));
           setUsersTab((prev) => (disabledUsersRes.ok ? 'available' : downgrade(prev)));
           setSignupTokenList((prev) => (signupTokensRes.ok ? 'available' : downgrade(prev)));
+          setUserEditor((prev) => (isQuotaSupported ? 'available' : downgrade(prev)));
         }
       } catch {
         // Keep settings button visible when detection fails to avoid blocking access.
@@ -240,6 +261,7 @@ function Dashboard() {
           setLogsTab(downgrade);
           setUsersTab(downgrade);
           setSignupTokenList(downgrade);
+          setUserEditor(downgrade);
         }
       }
     };
@@ -255,8 +277,10 @@ function Dashboard() {
   // don't see it. Base tabs (Overview, Invites, Files) are always present;
   // Users/Logs/API are optional, so the column count is 3 + however many show.
   const apiExplorerEnabled = process.env.NEXT_PUBLIC_API_EXPLORER === 'true';
-  const optionalTabCount =
-    (usersTab !== 'unknown' ? 1 : 0) + (logsTab !== 'unknown' ? 1 : 0) + (apiExplorerEnabled ? 1 : 0);
+  // The Users tab shows for either of its parts: the editor (quota route) or
+  // the disabled-accounts list (its own listing route).
+  const showUsersTab = usersTab !== 'unknown' || userEditor !== 'unknown';
+  const optionalTabCount = (showUsersTab ? 1 : 0) + (logsTab !== 'unknown' ? 1 : 0) + (apiExplorerEnabled ? 1 : 0);
   const tabColsClass =
     optionalTabCount >= 3
       ? 'md:grid-cols-6'
@@ -281,7 +305,7 @@ function Dashboard() {
                 <Home className="shrink-0" />
                 Overview
               </TabsTrigger>
-              {usersTab !== 'unknown' && (
+              {showUsersTab && (
                 <TabsTrigger
                   value="users"
                   className="shrink-0 gap-2 text-xs sm:text-sm [&_svg]:size-4"
@@ -335,11 +359,14 @@ function Dashboard() {
               />
             </TabsContent>
 
-            {usersTab !== 'unknown' && (
+            {showUsersTab && (
               <TabsContent value="users" className="space-y-4">
-                {usersTab === 'unavailable' ? (
+                {userEditor === 'available' && (
+                  <UserEditor onDisableUser={handleDisableUser} onEnableUser={handleEnableUser} />
+                )}
+                {usersTab === 'unavailable' || (usersTab === 'unknown' && userEditor === 'unavailable') ? (
                   <TabUnavailableNotice />
-                ) : (
+                ) : usersTab === 'unknown' ? null : (
                   <DisabledUsersManagement
                     onDisableUser={handleDisableUser}
                     onEnableUser={handleEnableUser}

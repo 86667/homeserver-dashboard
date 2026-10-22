@@ -1,0 +1,147 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { UserEditor } from './UserEditor';
+
+const ALICE = 'whgxto9xtroaih7ict9chtuxh1xmbpmci5qd71jsen3ow3bscipy';
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+
+let quota = { effective: { storage_quota_mb: 1024 as number | 'unlimited' }, overrides: {} as Record<string, unknown> };
+let fetchMock: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  quota = { effective: { storage_quota_mb: 1024 }, overrides: {} };
+  fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === 'PATCH') {
+      const patch = JSON.parse(String(init.body));
+      quota = { effective: { ...quota.effective, ...patch }, overrides: { ...quota.overrides, ...patch } };
+      return new Response(null, { status: 200 });
+    }
+    if (String(input).includes(ALICE)) return json(quota);
+    return new Response('Not Found', { status: 404 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+const noop = vi.fn().mockResolvedValue(undefined);
+
+async function lookUp(pubky: string) {
+  fireEvent.change(screen.getByLabelText('User pubky'), { target: { value: pubky } });
+  fireEvent.click(screen.getByRole('button', { name: 'Look up' }));
+}
+
+describe('UserEditor', () => {
+  it('looks a user up, accepting the pubky prefix, and shows defaults as placeholders', async () => {
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp(`pubky${ALICE}`);
+    await screen.findByTestId('user-editor-result');
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`/api/admin/users/${ALICE}/quota`);
+    const storage = screen.getByLabelText('Storage (MB)') as HTMLInputElement;
+    expect(storage.value).toBe('');
+    expect(storage.placeholder).toBe('1024');
+  });
+
+  it('saves only what changed and shows the field as custom', async () => {
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-editor-result');
+    fireEvent.change(screen.getByLabelText('Storage (MB)'), { target: { value: '2048' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save allowance' }));
+    await screen.findByText('Allowance saved.');
+    const patch = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH');
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({ storage_quota_mb: 2048 });
+    expect((screen.getByLabelText('Storage (MB)') as HTMLInputElement).value).toBe('2048');
+    expect(screen.getByText('custom')).toBeTruthy();
+  });
+
+  it('explains an unparseable field without calling the homeserver', async () => {
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-editor-result');
+    fireEvent.change(screen.getByLabelText('Storage (MB)'), { target: { value: 'lots' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save allowance' }));
+    expect((await screen.findByTestId('user-editor-error')).textContent).toContain('whole number of MB');
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+  });
+
+  it('says when there is no such user', async () => {
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp('8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo');
+    expect((await screen.findByTestId('user-editor-error')).textContent).toContain('no user with that pubky');
+    expect(screen.queryByTestId('user-editor-result')).toBeNull();
+  });
+
+  it('does not know the status on a homeserver that does not report it, and offers both actions', async () => {
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-access');
+    expect(screen.getByTestId('user-access-not-known')).toBeTruthy();
+    expect(screen.getByTestId('user-access-unknown')).toBeTruthy();
+    expect(screen.getByTestId('user-enable')).toBeTruthy();
+    expect(screen.getByTestId('user-disable')).toBeTruthy();
+  });
+
+  it('shows the status a homeserver reports, with only the action that applies', async () => {
+    quota = { ...quota, disabled: true } as typeof quota & { disabled: boolean };
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-access-disabled');
+    expect(screen.queryByTestId('user-access-unknown')).toBeNull();
+    expect(screen.getByTestId('user-enable')).toBeTruthy();
+    expect(screen.queryByTestId('user-disable')).toBeNull();
+  });
+
+  it('disables and enables through the given handlers, remembering the result', async () => {
+    const onDisable = vi.fn().mockResolvedValue(undefined);
+    const onEnable = vi.fn().mockRejectedValue(new Error('homeserver said no'));
+    render(<UserEditor onDisableUser={onDisable} onEnableUser={onEnable} />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-access');
+    fireEvent.click(screen.getByTestId('user-disable'));
+    await screen.findByText(/User disabled/);
+    expect(onDisable).toHaveBeenCalledWith(ALICE);
+    expect(screen.getByTestId('user-access-disabled')).toBeTruthy();
+    expect(screen.queryByTestId('user-disable')).toBeNull();
+    fireEvent.click(screen.getByTestId('user-enable'));
+    expect((await screen.findByTestId('user-editor-error')).textContent).toContain('homeserver said no');
+    expect(screen.getByTestId('user-access-disabled')).toBeTruthy(); // the failed enable changed nothing
+  });
+
+  it('forgets a remembered status when another account is looked up', async () => {
+    const BOB = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST') return new Response('Ok', { status: 200 });
+      return json(quota);
+    });
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-access');
+    fireEvent.click(screen.getByTestId('user-disable'));
+    await screen.findByTestId('user-access-disabled');
+    await lookUp(BOB);
+    await waitFor(() => expect(screen.getByTestId('user-access-not-known')).toBeTruthy());
+  });
+
+  it('clears the account when the key is removed from the search bar', async () => {
+    render(<UserEditor onDisableUser={noop} onEnableUser={noop} />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-editor-result');
+    fireEvent.change(screen.getByLabelText('User pubky'), { target: { value: '' } });
+    expect(screen.queryByTestId('user-editor-result')).toBeNull();
+    expect(screen.queryByTestId('user-access')).toBeNull();
+    // Typing again shows nothing until the next look-up.
+    fireEvent.change(screen.getByLabelText('User pubky'), { target: { value: 'pub' } });
+    expect(screen.queryByTestId('user-access')).toBeNull();
+  });
+
+  it('opens a user requested from elsewhere', async () => {
+    render(<UserEditor request={{ pubkey: ALICE, nonce: 1 }} onDisableUser={noop} onEnableUser={noop} />);
+    await screen.findByTestId('user-editor-result');
+    await waitFor(() => expect((screen.getByLabelText('User pubky') as HTMLInputElement).value).toBe(ALICE));
+  });
+});

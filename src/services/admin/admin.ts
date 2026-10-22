@@ -6,6 +6,8 @@ import {
   GenerateInviteResponse,
   SignupTokenState,
   SignupTokensResponse,
+  UserQuotaPatch,
+  UserQuotaResponse,
 } from './admin.types';
 
 /**
@@ -91,6 +93,15 @@ export class AdminService {
     const params = new URLSearchParams({ state, limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
     return this.request<SignupTokensResponse>(`/signup_tokens?${params.toString()}`);
+  }
+
+  async getUserQuota(pubkey: string): Promise<UserQuotaResponse> {
+    return this.request<UserQuotaResponse>(`/users/${encodeURIComponent(pubkey)}/quota`);
+  }
+
+  /** Changes the fields in `patch`; a null field goes back to the homeserver default. */
+  async patchUserQuota(pubkey: string, patch: UserQuotaPatch): Promise<void> {
+    await this.request(`/users/${encodeURIComponent(pubkey)}/quota`, { method: 'PATCH', body: JSON.stringify(patch) });
   }
 
   async generateInvite(): Promise<GenerateInviteResponse> {

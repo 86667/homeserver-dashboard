@@ -9,7 +9,7 @@ The UI lives under a single route: **`/dashboard`** (the home page redirects the
 The dashboard has 6 tabs:
 
 - **Overview**: Shows homeserver stats from `GET /info` including connection status, public key, addresses, version, and user/storage statistics
-- **Users**: Disable / enable a user by pubkey via `POST /users/{pubkey}/disable` and `POST /users/{pubkey}/enable`. The disabled-users list is fetched live from the `/users/disabled` admin endpoint.
+- **Users**: Look up an account by pubky and manage it: its allowance (storage, download and upload rates and bursts, writable paths) via the admin `GET|PATCH /users/{pubkey}/quota` of homeserver 0.16+, and disable / enable it via `POST /users/{pubkey}/disable` and `POST /users/{pubkey}/enable`. On a homeserver with the `/users/disabled` listing, the disabled-users list is shown too. The tab appears when either route exists.
 - **Invites**: Generate signup tokens via `GET /generate_signup_token` with QR code display for easy mobile app signup; view invite statistics (total generated, used, unused); and, on a homeserver that lists its codes (admin `GET /signup_tokens`, 0.14+), every code it has issued: unused ones with copy-code and copy-sign-up-link actions, used ones showing when and by which pubky
 - **Files**: Full WebDAV file browser (list/read/write/delete/move/create directories) using the `/dav/*` endpoint (Basic Auth). Includes admin "Delete from path" for removing entries by path
 - **Logs**: Tails the homeserver's JSON-line log file (level filter, line count). Requires `HOMESERVER_LOG_PATH`; the tab shows as unavailable when it is not set

@@ -35,6 +35,22 @@ describe('AdminService', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users/disabled?limit=5&cursor=abc');
   });
 
+  it('getUserQuota reads the quota route', async () => {
+    const body = { effective: { storage_quota_mb: 500 }, overrides: {} };
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status: 200, headers: jsonHeaders }));
+    await expect(service.getUserQuota('pk1')).resolves.toEqual(body);
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users/pk1/quota');
+  });
+
+  it('patchUserQuota sends the changed fields and treats an empty 200 as success', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 200, headers: jsonHeaders }));
+    await expect(service.patchUserQuota('pk1', { storage_quota_mb: 10, rate_read: null })).resolves.toBeUndefined();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/admin/users/pk1/quota');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ storage_quota_mb: 10, rate_read: null });
+  });
+
   it('getSignupTokens passes state, limit and cursor', async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200, headers: jsonHeaders }),

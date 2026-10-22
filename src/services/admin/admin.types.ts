@@ -33,3 +33,26 @@ export type SignupTokensResponse = {
   items: SignupToken[];
   next_cursor: string | null;
 };
+
+/**
+ * Per-user quota (admin `GET|PATCH /users/{pubkey}/quota`, pubky-homeserver
+ * 0.16+). A field missing from `overrides` follows the homeserver default;
+ * `effective` omits a field that resolves to no limit.
+ */
+export type UserQuota = {
+  storage_quota_mb?: number | 'unlimited';
+  rate_read?: string;
+  rate_write?: string;
+  rate_read_burst?: number;
+  rate_write_burst?: number;
+  /** Missing = writes anywhere; [] = read-only. */
+  allowed_write_paths?: string[];
+};
+export type UserQuotaResponse = {
+  effective: UserQuota;
+  overrides: UserQuota;
+  /** Whether the account is disabled. Not reported by homeservers up to 0.16; a later one may add it. */
+  disabled?: boolean;
+};
+/** Fields sent are changed; null hands a field back to the homeserver default. */
+export type UserQuotaPatch = { [K in keyof UserQuota]?: UserQuota[K] | null };
