@@ -1,6 +1,6 @@
 import {
-  DisabledUsersResponse,
   AdminInfoResponse,
+  AdminUser,
   DeleteUrlRequest,
   DisableUserRequest,
   GenerateInviteResponse,
@@ -9,6 +9,8 @@ import {
   UserQuota,
   UserQuotaPatch,
   UserQuotaResponse,
+  UsersQuery,
+  UsersResponse,
 } from './admin.types';
 
 /**
@@ -82,11 +84,21 @@ export class AdminService {
     return this.request<AdminInfoResponse>('/info');
   }
 
-  async getDisabledUsers(limit = 20, cursor?: string): Promise<DisabledUsersResponse> {
+  /** The homeserver's accounts, a page at a time (0.17+). */
+  async getUsers(query: UsersQuery = {}): Promise<UsersResponse> {
     const params = new URLSearchParams();
-    params.set('limit', String(limit));
-    if (cursor) params.set('cursor', cursor);
-    return this.request<DisabledUsersResponse>(`/users/disabled?${params.toString()}`);
+    if (query.state) params.set('state', query.state);
+    if (query.sortBy) params.set('sort_by', query.sortBy);
+    if (query.reverse) params.set('reverse', 'true');
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.cursor) params.set('cursor', query.cursor);
+    const suffix = params.size > 0 ? `?${params.toString()}` : '';
+    return this.request<UsersResponse>(`/users${suffix}`);
+  }
+
+  /** One account with its usage, status and limits (0.17+); 404 for an unknown pubky. */
+  async getUser(pubkey: string): Promise<AdminUser> {
+    return this.request<AdminUser>(`/users/${encodeURIComponent(pubkey)}`);
   }
 
   /** The homeserver's invite codes, `state` first, newest first, a page at a time. */

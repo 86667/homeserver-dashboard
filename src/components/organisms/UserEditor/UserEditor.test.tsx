@@ -139,6 +139,40 @@ describe('UserEditor', () => {
     expect(screen.queryByTestId('user-access')).toBeNull();
   });
 
+  it('with the user routes, reads status and usage from the account and re-reads after an action', async () => {
+    let disabled = false;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST') {
+        disabled = url.endsWith('/disable');
+        return new Response('Ok', { status: 200 });
+      }
+      if (url.endsWith(`/users/${ALICE}`))
+        return json({
+          pubky: ALICE,
+          created_at: '2026-10-22T10:00:00',
+          disabled,
+          used_bytes: 30 * 1024 * 1024,
+          quota: { effective: { storage_quota_mb: 500 }, overrides: { storage_quota_mb: 500 } },
+        });
+      return new Response('Not Found', { status: 404 });
+    });
+    const onDisable = vi.fn(async (pubkey: string) => {
+      await fetch(`/api/admin/users/${pubkey}/disable`, { method: 'POST' });
+    });
+    render(<UserEditor onDisableUser={onDisable} onEnableUser={noop} hasUserRoutes />);
+    await lookUp(ALICE);
+    await screen.findByTestId('user-access-enabled');
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain(`/api/admin/users/${ALICE}`);
+    expect(screen.getByTestId('user-usage').textContent).toBe('30 MB of 500 MB (6%)');
+    expect(screen.queryByTestId('user-access-unknown')).toBeNull();
+    expect((screen.getByLabelText('Storage (MB)') as HTMLInputElement).value).toBe('500');
+    fireEvent.click(screen.getByTestId('user-disable'));
+    await screen.findByText(/User disabled/);
+    expect(screen.getByTestId('user-access-disabled')).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([u]) => String(u) === `/api/admin/users/${ALICE}`)).toHaveLength(2);
+  });
+
   it('opens a user requested from elsewhere', async () => {
     render(<UserEditor request={{ pubkey: ALICE, nonce: 1 }} onDisableUser={noop} onEnableUser={noop} />);
     await screen.findByTestId('user-editor-result');

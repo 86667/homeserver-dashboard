@@ -14,11 +14,6 @@ export type AdminInfoResponse = {
 
 export type DeleteUrlRequest = { path: string };
 export type DisableUserRequest = { pubkey: string };
-export type DisabledUser = { pubkey: string };
-export type DisabledUsersResponse = {
-  items: DisabledUser[];
-  next_cursor: string | null;
-};
 export type GenerateInviteResponse = { token: string };
 
 /** Admin `GET /signup_tokens` (pubky-homeserver 0.14+). Timestamps are UTC without a zone. */
@@ -28,7 +23,7 @@ export type SignupToken = {
   created_at: string;
   used_at: string | null;
   used_by: string | null;
-  /** The limits the code carries, as given when it was created; empty = the homeserver's defaults. Reported by homeservers after 0.16.2. */
+  /** The limits the code carries, as given when it was created; empty = the homeserver's defaults. Reported by homeserver 0.17+. */
   quota?: UserQuota;
 };
 export type SignupTokensResponse = {
@@ -58,3 +53,27 @@ export type UserQuotaResponse = {
 };
 /** Fields sent are changed; null hands a field back to the homeserver default. */
 export type UserQuotaPatch = { [K in keyof UserQuota]?: UserQuota[K] | null };
+
+/** Admin `GET /users` (homeserver 0.17+): the accounts on this homeserver, with usage and limits. */
+export type UserListState = 'all' | 'enabled' | 'disabled';
+export type UserSort = 'created_at' | 'used_bytes';
+export type AdminUser = {
+  /** The account's key, z-base-32 as the homeserver names it. */
+  pubky: string;
+  /** When the account was created: UTC without a zone. */
+  created_at: string;
+  disabled: boolean;
+  used_bytes: number;
+  quota: UserQuotaResponse;
+};
+export type UsersResponse = {
+  items: AdminUser[];
+  next_cursor: string | null;
+};
+export type UsersQuery = {
+  state?: UserListState;
+  sortBy?: UserSort;
+  reverse?: boolean;
+  limit?: number;
+  cursor?: string;
+};

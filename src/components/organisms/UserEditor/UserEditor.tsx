@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AdminService } from '@/services/admin/admin';
+import { formatBytes, formatStorageMb } from '@/lib/format';
 import type { UserQuotaResponse } from '@/services/admin/admin.types';
 import { QUOTA_FIELDS, type QuotaText, defaultText, quotaPatch, quotaText } from '@/lib/quota-form';
 
@@ -18,9 +19,11 @@ export interface UserEditorProps {
   request?: { pubkey: string; nonce: number } | null;
   onDisableUser: (pubkey: string) => Promise<void>;
   onEnableUser: (pubkey: string) => Promise<void>;
+  /** The homeserver has `GET /users/{pubkey}` (0.17+): status and storage used come from it. */
+  hasUserRoutes?: boolean;
 }
 
-type Loaded = { pubkey: string; quota: UserQuotaResponse; text: QuotaText };
+type Loaded = { pubkey: string; quota: UserQuotaResponse; text: QuotaText; usedBytes?: number };
 /** What is known about the account being enabled: from the homeserver when it says, else from this session's own actions. */
 type AccessState = 'enabled' | 'disabled' | 'unknown';
 
@@ -44,7 +47,7 @@ const bareKey = (input: string) =>
  * writable paths) and disable or enable them. Uses the admin
  * `GET|PATCH /users/{pubkey}/quota` of pubky-homeserver 0.16+.
  */
-export function UserEditor({ request, onDisableUser, onEnableUser }: UserEditorProps) {
+export function UserEditor({ request, onDisableUser, onEnableUser, hasUserRoutes = false }: UserEditorProps) {
   const [input, setInput] = useState('');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [edited, setEdited] = useState<QuotaText | null>(null);
@@ -56,35 +59,49 @@ export function UserEditor({ request, onDisableUser, onEnableUser }: UserEditorP
   // Whose status this session remembers; a different account starts from unknown.
   const rememberedFor = useRef<string | null>(null);
 
-  const lookUp = useCallback(async (pubkey: string) => {
-    const thisLookup = ++lookupId.current;
-    setBusy('lookup');
-    setError(null);
-    setNotice(null);
-    try {
-      const quota = await getService().getUserQuota(pubkey);
-      if (thisLookup !== lookupId.current) return;
-      const text = quotaText(quota.overrides);
-      setLoaded({ pubkey, quota, text });
-      setEdited(text);
-      // A fresh answer replaces what this session remembered, if the homeserver reports it.
-      if (typeof quota.disabled === 'boolean') setAccess(quota.disabled ? 'disabled' : 'enabled');
-      else if (rememberedFor.current !== pubkey) setAccess('unknown');
-      rememberedFor.current = pubkey;
-    } catch (err) {
-      if (thisLookup !== lookupId.current) return;
-      setLoaded(null);
-      setError(
-        statusOf(err) === 404
-          ? 'This homeserver has no user with that pubky.'
-          : statusOf(err) === 400
-            ? 'That is not a valid pubky.'
-            : message(err, 'Could not look up the user.'),
-      );
-    } finally {
-      if (thisLookup === lookupId.current) setBusy(null);
-    }
-  }, []);
+  const lookUp = useCallback(
+    async (pubkey: string) => {
+      const thisLookup = ++lookupId.current;
+      setBusy('lookup');
+      setError(null);
+      setNotice(null);
+      try {
+        let quota: UserQuotaResponse;
+        let usedBytes: number | undefined;
+        let disabled: boolean | undefined;
+        if (hasUserRoutes) {
+          const user = await getService().getUser(pubkey);
+          quota = user.quota;
+          usedBytes = user.used_bytes;
+          disabled = user.disabled;
+        } else {
+          quota = await getService().getUserQuota(pubkey);
+          disabled = quota.disabled;
+        }
+        if (thisLookup !== lookupId.current) return;
+        const text = quotaText(quota.overrides);
+        setLoaded({ pubkey, quota, text, usedBytes });
+        setEdited(text);
+        // The homeserver's word replaces what this session remembered, when it gives one.
+        if (typeof disabled === 'boolean') setAccess(disabled ? 'disabled' : 'enabled');
+        else if (rememberedFor.current !== pubkey) setAccess('unknown');
+        rememberedFor.current = pubkey;
+      } catch (err) {
+        if (thisLookup !== lookupId.current) return;
+        setLoaded(null);
+        setError(
+          statusOf(err) === 404
+            ? 'This homeserver has no user with that pubky.'
+            : statusOf(err) === 400
+              ? 'That is not a valid pubky.'
+              : message(err, 'Could not look up the user.'),
+        );
+      } finally {
+        if (thisLookup === lookupId.current) setBusy(null);
+      }
+    },
+    [hasUserRoutes],
+  );
 
   useEffect(() => {
     if (!request) return;
@@ -146,6 +163,8 @@ export function UserEditor({ request, onDisableUser, onEnableUser }: UserEditorP
     try {
       await (action === 'disable' ? onDisableUser : onEnableUser)(loaded.pubkey);
       setAccess(action === 'disable' ? 'disabled' : 'enabled');
+      // Read the account again so status and usage are the homeserver's, not this session's guess.
+      if (hasUserRoutes) await lookUp(loaded.pubkey);
       setNotice(
         action === 'disable'
           ? 'User disabled. They can no longer sign in or write; their files are kept.'
@@ -159,73 +178,74 @@ export function UserEditor({ request, onDisableUser, onEnableUser }: UserEditorP
   };
 
   return (
-    <>
-      <Card data-testid="user-editor">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base sm:text-lg">Manage a user</CardTitle>
-          <CardDescription className="text-xs sm:text-sm">
-            Look up an account by pubky to change its allowance, or to disable or enable it.
-          </CardDescription>
-        </CardHeader>
+    <Card data-testid="user-editor">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-base sm:text-lg">Manage a user</CardTitle>
+        <CardDescription className="text-xs sm:text-sm">
+          Look up an account by pubky to change its allowance, or to disable or enable it.
+        </CardDescription>
+      </CardHeader>
 
-        <div className="mx-6 h-px bg-border/60" />
+      <div className="mx-6 h-px bg-border/60" />
 
-        <CardContent className="space-y-4 pt-4">
-          <form
-            className="flex flex-col gap-2 sm:flex-row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              handleLookUp();
-            }}
-          >
-            <Input
-              aria-label="User pubky"
-              placeholder="pubky…"
-              value={input}
-              onChange={(event) => handleInput(event.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-              className="font-mono"
-            />
-            <Button type="submit" variant="outline" disabled={busy !== null} className="shrink-0 gap-2">
-              {busy === 'lookup' ? <ButtonSpinner /> : <Search className="h-4 w-4" />}
-              Look up
-            </Button>
-          </form>
+      <CardContent className="space-y-4 pt-4">
+        <form
+          className="flex flex-col gap-2 sm:flex-row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleLookUp();
+          }}
+        >
+          <Input
+            aria-label="User pubky"
+            placeholder="pubky…"
+            value={input}
+            onChange={(event) => handleInput(event.target.value)}
+            spellCheck={false}
+            autoComplete="off"
+            className="font-mono"
+          />
+          <Button type="submit" variant="outline" disabled={busy !== null} className="shrink-0 gap-2">
+            {busy === 'lookup' ? <ButtonSpinner /> : <Search className="h-4 w-4" />}
+            Look up
+          </Button>
+        </form>
 
-          {error && (
-            <Alert variant="destructive" data-testid="user-editor-error">
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription className="text-xs break-words">{error}</AlertDescription>
-            </Alert>
-          )}
+        {error && (
+          <Alert variant="destructive" data-testid="user-editor-error">
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription className="text-xs break-words">{error}</AlertDescription>
+          </Alert>
+        )}
 
-          {notice && (
-            <Alert data-testid="user-editor-notice">
-              <Check className="h-4 w-4" />
-              <AlertTitle>Done</AlertTitle>
-              <AlertDescription className="text-xs">{notice}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
+        {notice && (
+          <Alert data-testid="user-editor-notice">
+            <Check className="h-4 w-4" />
+            <AlertTitle>Done</AlertTitle>
+            <AlertDescription className="text-xs">{notice}</AlertDescription>
+          </Alert>
+        )}
 
-      {loaded && (
-        <Card data-testid="user-access">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-lg">Account</CardTitle>
-            <CardDescription className="text-xs sm:text-sm">
-              <code className="font-mono break-all">pubky{loaded.pubkey}</code>
-            </CardDescription>
-          </CardHeader>
-
-          <div className="mx-6 h-px bg-border/60" />
-
-          <CardContent className="space-y-3 pt-4">
+        {loaded && (
+          <section className="space-y-3 border-t pt-4" data-testid="user-access">
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium text-foreground">Account</h3>
+              <code className="block font-mono text-xs break-all text-muted-foreground sm:text-sm">
+                pubky{loaded.pubkey}
+              </code>
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
               <span className="shrink-0 text-xs text-muted-foreground sm:text-sm">Status:</span>
               <AccessBadge access={access} />
             </div>
+            {loaded.usedBytes !== undefined && (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                <span className="shrink-0 text-xs text-muted-foreground sm:text-sm">Storage used:</span>
+                <span className="text-xs text-foreground sm:text-sm" data-testid="user-usage">
+                  {describeUsage(loaded.usedBytes, loaded.quota.effective.storage_quota_mb)}
+                </span>
+              </div>
+            )}
             {access === 'unknown' && (
               <p className="text-xs text-muted-foreground/70" data-testid="user-access-unknown">
                 This homeserver does not report whether an account is disabled. After you disable or enable it here, the
@@ -261,23 +281,18 @@ export function UserEditor({ request, onDisableUser, onEnableUser }: UserEditorP
             <p className="text-xs text-muted-foreground/70">
               A disabled account cannot sign in or write; its files are kept and stay readable.
             </p>
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
 
-      {loaded && edited && (
-        <Card data-testid="user-editor-result">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base sm:text-lg">Allowance</CardTitle>
-            <CardDescription className="text-xs sm:text-sm">
-              Empty fields follow the homeserver&apos;s defaults, shown greyed out. Clear a field to hand it back to the
-              default.
-            </CardDescription>
-          </CardHeader>
-
-          <div className="mx-6 h-px bg-border/60" />
-
-          <CardContent className="space-y-4 pt-4">
+        {loaded && edited && (
+          <section className="space-y-4 border-t pt-4" data-testid="user-editor-result">
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium text-foreground">Allowance</h3>
+              <p className="text-xs text-muted-foreground sm:text-sm">
+                Empty fields follow the homeserver&apos;s defaults, shown greyed out. Clear a field to hand it back to
+                the default.
+              </p>
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {QUOTA_FIELDS.map(({ key, label, hint }) => {
                 const overridden = key in loaded.quota.overrides;
@@ -307,11 +322,18 @@ export function UserEditor({ request, onDisableUser, onEnableUser }: UserEditorP
               {busy === 'save' && <ButtonSpinner />}
               Save allowance
             </Button>
-          </CardContent>
-        </Card>
-      )}
-    </>
+          </section>
+        )}
+      </CardContent>
+    </Card>
   );
+}
+
+/** "30 KB of 500 MB (6%)", or "30 KB, no limit". */
+function describeUsage(usedBytes: number, limit: number | 'unlimited' | undefined): string {
+  if (typeof limit !== 'number' || limit <= 0) return `${formatBytes(usedBytes)}, no limit`;
+  const share = Math.min(100, Math.round((usedBytes / (limit * 1024 * 1024)) * 100));
+  return `${formatBytes(usedBytes)} of ${formatStorageMb(limit)} (${share}%)`;
 }
 
 function AccessBadge({ access }: { access: AccessState }) {

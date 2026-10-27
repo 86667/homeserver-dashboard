@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAdminInfo, useAdminActions, useDisabledUsers } from '@/hooks/admin';
+import { useAdminInfo, useAdminActions } from '@/hooks/admin';
 import { useAccountPageUrl } from '@/hooks/useAccountPageUrl';
 import { usePlatform } from '@/components/providers/PlatformProvider';
 import { AuthGate } from '@/components/organisms/AuthGate';
@@ -10,12 +10,12 @@ import { DashboardNavbar } from '@/components/organisms/DashboardNavbar';
 import { DashboardOverview, useSetupGuideDismissal } from '@/components/organisms/DashboardOverview';
 import { ApiExplorer } from '@/components/organisms/ApiExplorer';
 import { FileBrowser } from '@/components/organisms/FileBrowser';
-import { DisabledUsersManagement } from '@/components/organisms/DisabledUsersManagement';
 import { ConfigDialog } from '@/components/organisms/ConfigDialog';
 import { InviteManagement } from '@/components/organisms/InviteManagement';
 import { DashboardLogs } from '@/components/organisms/DashboardLogs';
 import { SignupTokenList } from '@/components/organisms/SignupTokenList';
 import { UserEditor } from '@/components/organisms/UserEditor';
+import { UserList } from '@/components/organisms/UserList';
 import type { UserQuota } from '@/services/admin/admin.types';
 import {
   Github,
@@ -87,25 +87,7 @@ function Dashboard() {
     refetch: refetchInfo,
     refresh: refreshInfo,
   } = useAdminInfo();
-  const {
-    disableUser,
-    enableUser,
-    generateInvite,
-    isGeneratingInvite,
-    isDisablingUser,
-    isEnablingUser,
-    generateInviteError,
-  } = useAdminActions();
-  const {
-    items: disabledUsers,
-    nextCursor,
-    isLoading: isLoadingDisabledUsers,
-    isLoadingMore: isLoadingMoreDisabledUsers,
-    error: disabledUsersError,
-    refetch: refetchDisabledUsers,
-    loadMore: loadMoreDisabledUsers,
-    removeDisabledUserLocally,
-  } = useDisabledUsers();
+  const { disableUser, enableUser, generateInvite, isGeneratingInvite, generateInviteError } = useAdminActions();
 
   // Controlled tabs: the get-started checklist's "Open Invites" CTA and the
   // footer's "Setup guide" link both need to drive the active tab.
@@ -126,7 +108,11 @@ function Dashboard() {
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false);
   const [canOpenSettings, setCanOpenSettings] = useState(true);
   const [logsTab, setLogsTab] = useState<TabAvailability>('unknown');
-  const [usersTab, setUsersTab] = useState<TabAvailability>('unknown');
+  // The user list on the Users tab needs the admin listing route (homeserver 0.17+).
+  const [userList, setUserList] = useState<TabAvailability>('unknown');
+  const [usersRefreshKey, setUsersRefreshKey] = useState(0);
+  // "Manage" on a listed account: open it in the editor below the list.
+  const [userEditorRequest, setUserEditorRequest] = useState<{ pubkey: string; nonce: number } | null>(null);
   // The user editor on the Users tab needs the per-user quota route (homeserver 0.16+).
   const [userEditor, setUserEditor] = useState<TabAvailability>('unknown');
   // The invite code list on the Invites tab needs the admin listing route (homeserver 0.14+).
@@ -175,22 +161,27 @@ function Dashboard() {
   const handleDisableUser = useCallback(
     async (pubkey: string) => {
       await disableUser(pubkey);
-      await Promise.all([refetchInfo(), refetchDisabledUsers()]);
+      setUsersRefreshKey((n) => n + 1);
+      await refetchInfo();
     },
-    [disableUser, refetchDisabledUsers, refetchInfo],
+    [disableUser, refetchInfo],
   );
 
   const handleEnableUser = useCallback(
     async (pubkey: string) => {
-      removeDisabledUserLocally(pubkey);
       try {
         await enableUser(pubkey);
       } finally {
-        await Promise.all([refetchInfo(), refetchDisabledUsers()]);
+        setUsersRefreshKey((n) => n + 1);
+        await refetchInfo();
       }
     },
-    [enableUser, refetchDisabledUsers, refetchInfo, removeDisabledUserLocally],
+    [enableUser, refetchInfo],
   );
+
+  const handleManageUser = useCallback((pubkey: string) => {
+    setUserEditorRequest((prev) => ({ pubkey, nonce: (prev?.nonce ?? 0) + 1 }));
+  }, []);
 
   // Probing while the homeserver is still booting reports everything as
   // missing; once /info recovers from an error, probe again so tabs come
@@ -216,19 +207,19 @@ function Dashboard() {
     //   - /api/server-config - 2xx means readable; body's `writable` flag drives edit affordance
     //   - /api/cloudflare-config - body's `supported` flag drives the Cloudflare tab
     //   - /api/logs - 2xx means the log file is readable, drives the Logs tab
-    //   - /api/admin/users/disabled - 2xx means the homeserver exposes the
-    //     disabled-users listing endpoint (pubky-core PR #327); drives the Users tab
+    //   - /api/admin/users - 2xx means the homeserver lists its accounts
+    //     (0.17+); drives the user list on the Users tab
     //   - /api/admin/signup_tokens - 2xx means the homeserver lists its invite
     //     codes (0.14+); drives the code list on the Invites tab
     //   - /api/admin/users/{pubky}/quota - the per-user quota route (0.16+);
     //     drives the user editor, which also shows the Users tab
     const detectAvailability = async () => {
       try {
-        const [configRes, cloudflareRes, logsRes, disabledUsersRes, signupTokensRes, quotaRes] = await Promise.all([
+        const [configRes, cloudflareRes, logsRes, usersRes, signupTokensRes, quotaRes] = await Promise.all([
           fetch('/api/server-config'),
           fetch('/api/cloudflare-config'),
           fetch('/api/logs?lines=0'),
-          fetch('/api/admin/users/disabled?limit=1'),
+          fetch('/api/admin/users?limit=1'),
           fetch('/api/admin/signup_tokens?limit=1'),
           fetch(`/api/admin/users/${QUOTA_PROBE_PUBKY}/quota`),
         ]);
@@ -257,7 +248,7 @@ function Dashboard() {
           setConfigWritable(isConfigWritable);
           setHomeserverDefaults(defaults);
           setLogsTab((prev) => (logsRes.ok ? 'available' : downgrade(prev)));
-          setUsersTab((prev) => (disabledUsersRes.ok ? 'available' : downgrade(prev)));
+          setUserList((prev) => (usersRes.ok ? 'available' : downgrade(prev)));
           setSignupTokenList((prev) => (signupTokensRes.ok ? 'available' : downgrade(prev)));
           setUserEditor((prev) => (isQuotaSupported ? 'available' : downgrade(prev)));
         }
@@ -266,7 +257,7 @@ function Dashboard() {
         if (!cancelled) {
           setCanOpenSettings(true);
           setLogsTab(downgrade);
-          setUsersTab(downgrade);
+          setUserList(downgrade);
           setSignupTokenList(downgrade);
           setUserEditor(downgrade);
         }
@@ -284,9 +275,9 @@ function Dashboard() {
   // don't see it. Base tabs (Overview, Invites, Files) are always present;
   // Users/Logs/API are optional, so the column count is 3 + however many show.
   const apiExplorerEnabled = process.env.NEXT_PUBLIC_API_EXPLORER === 'true';
-  // The Users tab shows for either of its parts: the editor (quota route) or
-  // the disabled-accounts list (its own listing route).
-  const showUsersTab = usersTab !== 'unknown' || userEditor !== 'unknown';
+  // The Users tab shows for either of its parts: the list (users route) or
+  // the editor (quota route).
+  const showUsersTab = userList !== 'unknown' || userEditor !== 'unknown';
   const optionalTabCount = (showUsersTab ? 1 : 0) + (logsTab !== 'unknown' ? 1 : 0) + (apiExplorerEnabled ? 1 : 0);
   const tabColsClass =
     optionalTabCount >= 3
@@ -368,27 +359,18 @@ function Dashboard() {
 
             {showUsersTab && (
               <TabsContent value="users" className="space-y-4">
-                {userEditor === 'available' && (
-                  <UserEditor onDisableUser={handleDisableUser} onEnableUser={handleEnableUser} />
+                {userList === 'available' && (
+                  <UserList numUsers={info?.num_users} refreshKey={usersRefreshKey} onManage={handleManageUser} />
                 )}
-                {usersTab === 'unavailable' || (usersTab === 'unknown' && userEditor === 'unavailable') ? (
-                  <TabUnavailableNotice />
-                ) : usersTab === 'unknown' ? null : (
-                  <DisabledUsersManagement
+                {userEditor === 'available' && (
+                  <UserEditor
+                    request={userEditorRequest}
                     onDisableUser={handleDisableUser}
                     onEnableUser={handleEnableUser}
-                    isDisablingUser={isDisablingUser || isEnablingUser}
-                    numUsersTotal={info?.num_users}
-                    numDisabledUsers={info?.num_disabled_users}
-                    disabledUsers={disabledUsers}
-                    isLoadingDisabledUsers={isLoadingDisabledUsers}
-                    isLoadingMoreDisabledUsers={isLoadingMoreDisabledUsers}
-                    hasMoreDisabledUsers={Boolean(nextCursor)}
-                    onLoadMoreDisabledUsers={loadMoreDisabledUsers}
-                    onRefreshDisabledUsers={refetchDisabledUsers}
-                    disabledUsersError={disabledUsersError?.message ?? null}
+                    hasUserRoutes={userList === 'available'}
                   />
                 )}
+                {userList !== 'available' && userEditor !== 'available' && <TabUnavailableNotice />}
               </TabsContent>
             )}
 

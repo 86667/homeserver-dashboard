@@ -29,10 +29,30 @@ describe('AdminService', () => {
     expect((init.headers as Headers).get('content-type')).toBe('application/json');
   });
 
-  it('getDisabledUsers builds the limit/cursor query', async () => {
-    fetchMock.mockResolvedValue(new Response(JSON.stringify({ users: [] }), { status: 200, headers: jsonHeaders }));
-    await service.getDisabledUsers(5, 'abc');
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users/disabled?limit=5&cursor=abc');
+  it('getUsers builds the state, sort and paging query', async () => {
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200, headers: jsonHeaders }),
+    );
+    await service.getUsers();
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users');
+    await service.getUsers({ state: 'disabled', sortBy: 'used_bytes', reverse: true, limit: 10, cursor: 'abc' });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/admin/users?state=disabled&sort_by=used_bytes&reverse=true&limit=10&cursor=abc',
+    );
+  });
+
+  it('getUser reads one account', async () => {
+    const user = {
+      created_at: '2026-10-22T10:00:00',
+      disabled: false,
+      used_bytes: 12,
+      quota: { effective: {}, overrides: {} },
+    };
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ pubky: 'pk1', ...user }), { status: 200, headers: jsonHeaders }),
+    );
+    await expect(service.getUser('pk1')).resolves.toEqual({ pubky: 'pk1', ...user });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users/pk1');
   });
 
   it('generateInvite asks with GET by default and posts limits when given', async () => {
