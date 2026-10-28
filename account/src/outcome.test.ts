@@ -4,6 +4,7 @@ import { describeOutcome } from './outcome';
 
 const found: AccountInfo = { pubky: 'pk', hasAccount: true };
 const missing: AccountInfo = { pubky: 'pk', hasAccount: false };
+const elsewhere: AccountInfo = { pubky: 'pk', hasAccount: false, otherHomeserver: 'hs2' };
 
 describe('describeOutcome', () => {
   it('a sign-up that spent the code created the account', () => {
@@ -38,5 +39,15 @@ describe('describeOutcome', () => {
       hasAccount: false,
       title: 'No account on this homeserver',
     });
+  });
+
+  it('a pubky whose record names another homeserver has nothing here, whatever the request', () => {
+    expect(describeOutcome('signin', elsewhere)).toMatchObject({
+      hasAccount: false,
+      title: 'No account on this homeserver',
+      text: expect.stringContaining('another homeserver (hs2)'),
+    });
+    expect(describeOutcome('signup', elsewhere, 'valid').text).toMatch(/another homeserver.*still unused/);
+    expect(describeOutcome('signup', elsewhere, 'error').text).not.toMatch(/unused/);
   });
 });

@@ -4,23 +4,23 @@ import { HomeserverClient } from './homeserver-client';
 
 const HOMESERVER = '8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo';
 const ALICE = 'whgxto9xtroaih7ict9chtuxh1xmbpmci5qd71jsen3ow3bscipy';
-const TOKEN_BYTES = new Uint8Array([1, 2, 3]);
+const OTHER_HOMESERVER = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
 
 // A stand-in for the Pubky SDK: records what the client asks of it.
 const sdk = vi.hoisted(() => {
   const clientFetch = vi.fn();
-  const startCookieAuthFlow = vi.fn();
+  const startGrantAuthFlow = vi.fn();
   const publicGet = vi.fn();
   class Pubky {
     client = { fetch: clientFetch };
     publicStorage = { get: publicGet };
-    startCookieAuthFlow = startCookieAuthFlow;
+    startGrantAuthFlow = startGrantAuthFlow;
     static testnet = vi.fn(() => new Pubky());
   }
   return {
     clientFetch,
     publicGet,
-    startCookieAuthFlow,
+    startGrantAuthFlow,
     Pubky,
     AuthFlowKind: {
       signup: vi.fn((homeserver: { key: string }, code: string | null) => ({
@@ -40,12 +40,49 @@ const config: AccountConfig = { homeserver: HOMESERVER, relay: 'https://relay.ex
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-/** A Ring flow whose approval resolves with a token signed by ALICE. */
-function flowApprovedBy(pubky = ALICE) {
-  sdk.startCookieAuthFlow.mockReturnValue({
-    authorizationUrl: 'pubkyauth://signin?secret=s',
-    awaitToken: () => Promise.resolve({ publicKey: { z32: () => pubky }, toBytes: () => TOKEN_BYTES }),
+const ACCOUNT = {
+  createdAt: '2026-10-22T10:11:12.123456',
+  disabled: false,
+  usedBytes: 30 * 1024,
+  quota: { effective: { storageQuotaMb: 500, rateRead: '100mb/m', rateWrite: 'unlimited' }, overrides: {} },
+};
+
+/** A grant session the SDK would hand over once Ring approved: ALICE's, at this homeserver, with her account. */
+function session({
+  pubky = ALICE,
+  homeserver = HOMESERVER,
+  account = () => Promise.resolve(ACCOUNT),
+  signout = vi.fn(async () => undefined),
+  capabilities = [ACCOUNT_CAPABILITY],
+}: {
+  pubky?: string;
+  homeserver?: string;
+  capabilities?: string[];
+  /** null: an SDK without `account()`. */
+  account?: (() => Promise<unknown>) | null;
+  signout?: () => Promise<void>;
+} = {}) {
+  return {
+    info: { publicKey: { z32: () => pubky } },
+    grant: {
+      sessionInfo: async () => ({ homeserver: { z32: () => homeserver }, capabilities }),
+      ...(account && { account }),
+    },
+    signout,
+  };
+}
+
+/** A Ring flow whose approval resolves with `approved`, or rejects with it when it is an Error. */
+function flow(approved: unknown) {
+  sdk.startGrantAuthFlow.mockResolvedValue({
+    authorizationUrl: 'pubkyauth://signin_grant?secret=s',
+    awaitApproval: () => (approved instanceof Error ? Promise.reject(approved) : Promise.resolve(approved)),
   });
+}
+
+/** The SDK's error for an HTTP refusal. */
+function sdkError(statusCode: number, message = `HTTP ${statusCode}`) {
+  return Object.assign(new Error(message), { name: 'RequestError', data: { statusCode } });
 }
 
 /** Answers the client's fetches by method and URL. */
@@ -114,76 +151,132 @@ describe('isInviteRequired', () => {
 });
 
 describe('startRequest', () => {
-  it('asks Ring to sign up on this homeserver with the code, for the page capability, through the relay', async () => {
-    flowApprovedBy();
+  it('asks Ring to sign up on this homeserver with the code, to read everything, through the relay, as this page', async () => {
+    flow(session());
     const client = await HomeserverClient.connect(config);
-    const request = client.startRequest('signup', 'ABCD-EFGH-JKMN');
-    expect(request.authUrl).toBe('pubkyauth://signin?secret=s');
-    expect(sdk.startCookieAuthFlow).toHaveBeenCalledWith(
+    const request = await client.startRequest('signup', 'ABCD-EFGH-JKMN');
+    expect(request.authUrl).toBe('pubkyauth://signin_grant?secret=s');
+    expect(sdk.startGrantAuthFlow).toHaveBeenCalledWith(
       ACCOUNT_CAPABILITY,
       { kind: 'signup', homeserver: HOMESERVER, code: 'ABCD-EFGH-JKMN' },
-      'https://relay.example.com/inbox',
+      { clientId: 'localhost', relay: 'https://relay.example.com/inbox' },
     );
   });
 
   it('asks Ring for a plain sign-in', async () => {
-    flowApprovedBy();
+    flow(session());
     const client = await HomeserverClient.connect(config);
-    client.startRequest('signin', null);
-    expect(sdk.startCookieAuthFlow).toHaveBeenCalledWith(ACCOUNT_CAPABILITY, { kind: 'signin' }, config.relay);
+    await client.startRequest('signin', null);
+    expect(sdk.startGrantAuthFlow).toHaveBeenCalledWith(
+      ACCOUNT_CAPABILITY,
+      { kind: 'signin' },
+      {
+        clientId: 'localhost',
+        relay: config.relay,
+      },
+    );
   });
 
-  it('signs in at this homeserver with the token, then signs out where it signed in', async () => {
-    flowApprovedBy();
-    const signedIn = new Response(new Uint8Array([0]));
-    Object.defineProperty(signedIn, 'url', { value: 'http://hs.example:6286/session' });
-    homeserver({ [`POST https://${HOMESERVER}/session`]: () => signedIn });
-    const browserFetch = vi.fn().mockResolvedValue(new Response(null));
-    vi.stubGlobal('fetch', browserFetch);
+  it('reads the account through the session, then revokes the grant', async () => {
+    const signout = vi.fn(async () => undefined);
+    flow(session({ signout }));
     const client = await HomeserverClient.connect(config);
-    await expect(client.startRequest('signin', null).awaitAccount()).resolves.toEqual({
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toEqual({
+      pubky: ALICE,
+      hasAccount: true,
+      account: {
+        createdAt: new Date('2026-10-22T10:11:12.123Z'),
+        disabled: false,
+        usedBytes: 30 * 1024,
+        quota: { effective: { storageQuotaMb: 500, rateRead: '100mb/m', rateWrite: 'unlimited' }, overrides: {} },
+      },
+    });
+    expect(signout).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports the account without details when the homeserver or the SDK cannot give them', async () => {
+    // A homeserver from before the route takes /account for a storage read: 403 on 0.17, 404 elsewhere.
+    for (const status of [403, 404]) {
+      flow(session({ account: () => Promise.reject(sdkError(status)) }));
+      const client = await HomeserverClient.connect(config);
+      await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toEqual({
+        pubky: ALICE,
+        hasAccount: true,
+      });
+    }
+    const client = await HomeserverClient.connect(config);
+    flow(session({ account: null }));
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toEqual({
       pubky: ALICE,
       hasAccount: true,
     });
+  });
 
-    expect(sdk.clientFetch.mock.calls[0][1]).toMatchObject({
-      method: 'POST',
-      body: TOKEN_BYTES,
-      credentials: 'include',
+  it('does not ask for the account when Ring granted less than reading everything', async () => {
+    const account = vi.fn();
+    flow(session({ account, capabilities: ['/pub/:rw'] }));
+    const client = await HomeserverClient.connect(config);
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toEqual({
+      pubky: ALICE,
+      hasAccount: true,
+      partialGrant: true,
     });
-    expect(browserFetch).toHaveBeenCalledWith('http://hs.example:6286/session', {
-      method: 'DELETE',
-      headers: { 'pubky-host': ALICE },
-      credentials: 'include',
+    expect(account).not.toHaveBeenCalled();
+  });
+
+  it('takes any grant that reads the root as enough, as a Ring that grants more than asked might', async () => {
+    flow(session({ capabilities: ['/:rw'] }));
+    const client = await HomeserverClient.connect(config);
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toMatchObject({
+      hasAccount: true,
+      account: expect.anything(),
     });
   });
 
-  it('reports no account when the homeserver does not know the signer', async () => {
-    flowApprovedBy();
-    homeserver({ [`POST https://${HOMESERVER}/session`]: () => new Response('Not Found', { status: 404 }) });
+  it('passes on any other failure to read the account, after revoking the grant', async () => {
+    const signout = vi.fn(async () => undefined);
+    flow(session({ account: () => Promise.reject(sdkError(500, 'database down')), signout }));
     const client = await HomeserverClient.connect(config);
-    await expect(client.startRequest('signin', null).awaitAccount()).resolves.toEqual({
+    await expect((await client.startRequest('signin', null)).awaitAccount()).rejects.toThrow('database down');
+    expect(signout).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a session at another homeserver as no account here, naming that homeserver', async () => {
+    const signout = vi.fn(async () => undefined);
+    flow(session({ homeserver: OTHER_HOMESERVER, signout }));
+    const client = await HomeserverClient.connect(config);
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toEqual({
+      pubky: ALICE,
+      hasAccount: false,
+      otherHomeserver: OTHER_HOMESERVER,
+    });
+    expect(signout).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports no account when the homeserver does not know the signer, or the signer has no homeserver', async () => {
+    flow(sdkError(404, 'Not Found'));
+    const client = await HomeserverClient.connect(config);
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toEqual({
+      pubky: null,
+      hasAccount: false,
+    });
+    flow(Object.assign(new Error(`could not resolve homeserver for ${ALICE}`), { name: 'RequestError' }));
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toEqual({
       pubky: ALICE,
       hasAccount: false,
     });
-    expect(sdk.clientFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("passes on the homeserver's reason for refusing the token", async () => {
-    flowApprovedBy();
-    homeserver({
-      [`POST https://${HOMESERVER}/session`]: () => new Response('AuthToken already used', { status: 400 }),
-    });
+  it("passes on the homeserver's reason for refusing the sign-in", async () => {
+    flow(sdkError(400, 'grant expired'));
     const client = await HomeserverClient.connect(config);
-    await expect(client.startRequest('signin', null).awaitAccount()).rejects.toThrow('AuthToken already used');
+    await expect((await client.startRequest('signin', null)).awaitAccount()).rejects.toThrow('grant expired');
   });
 
-  it('still reports the account when signing out fails', async () => {
-    flowApprovedBy();
-    homeserver({ [`POST https://${HOMESERVER}/session`]: () => new Response(new Uint8Array([0])) });
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('blocked')));
+  it('still reports the account when revoking the grant fails', async () => {
+    flow(session({ signout: vi.fn(async () => Promise.reject(new TypeError('blocked'))) }));
     const client = await HomeserverClient.connect(config);
-    await expect(client.startRequest('signin', null).awaitAccount()).resolves.toEqual({
+    await expect((await client.startRequest('signin', null)).awaitAccount()).resolves.toMatchObject({
       pubky: ALICE,
       hasAccount: true,
     });
@@ -191,12 +284,12 @@ describe('startRequest', () => {
 
   it('gives up waiting for Ring after ten minutes', async () => {
     vi.useFakeTimers();
-    sdk.startCookieAuthFlow.mockReturnValue({
+    sdk.startGrantAuthFlow.mockResolvedValue({
       authorizationUrl: 'pubkyauth://x',
-      awaitToken: () => new Promise(() => {}),
+      awaitApproval: () => new Promise(() => {}),
     });
     const client = await HomeserverClient.connect(config);
-    const waiting = client.startRequest('signin', null).awaitAccount();
+    const waiting = (await client.startRequest('signin', null)).awaitAccount();
     vi.advanceTimersByTime(10 * 60 * 1000);
     await expect(waiting).rejects.toThrow('This request expired. Start again.');
   });
@@ -204,12 +297,12 @@ describe('startRequest', () => {
   it('does not leave an abandoned request failing unhandled', async () => {
     const unhandled = vi.fn();
     process.on('unhandledRejection', unhandled);
-    sdk.startCookieAuthFlow.mockReturnValue({
+    sdk.startGrantAuthFlow.mockResolvedValue({
       authorizationUrl: 'pubkyauth://x',
-      awaitToken: () => Promise.reject(new Error('relay gone')),
+      awaitApproval: () => Promise.reject(new Error('relay gone')),
     });
     const client = await HomeserverClient.connect(config);
-    client.startRequest('signin', null);
+    await client.startRequest('signin', null);
     await new Promise((resolve) => setTimeout(resolve, 10));
     process.off('unhandledRejection', unhandled);
     expect(unhandled).not.toHaveBeenCalled();
