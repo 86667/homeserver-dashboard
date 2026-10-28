@@ -70,7 +70,8 @@ export function useAccountFlow(config: AccountConfig, initialCode: string) {
       const current = () => attempt.current === thisAttempt;
       const inviteCode = kind === 'signup' ? signUpCode : null;
       try {
-        const request = client.startRequest(kind, inviteCode);
+        const request = await client.startRequest(kind, inviteCode);
+        if (!current()) return;
         setStep({ name: 'waiting', kind, authUrl: request.authUrl });
 
         const info = await request.awaitAccount();

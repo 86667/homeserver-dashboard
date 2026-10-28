@@ -78,7 +78,7 @@ function Steps({ flow }: { flow: ReturnType<typeof useAccountFlow> }) {
       return (
         <AccountDetails
           outcome={describeOutcome(step.kind, step.info, step.inviteStatus)}
-          pubky={step.info.pubky}
+          info={step.info}
           onSignOut={backToStart}
         />
       );

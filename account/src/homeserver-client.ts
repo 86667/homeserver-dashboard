@@ -8,17 +8,20 @@
  * This is the only module that loads the Pubky SDK. It is loaded on demand in
  * the browser: it is large, and its Node build must never run in the server.
  */
-import type { AuthToken, Capabilities, Pubky } from '@synonymdev/pubky';
+import type { Capabilities, GrantSession, Pubky, Session } from '@synonymdev/pubky';
+import { parseHomeserverTime } from './account';
 import { parseEventStream, parseFeed } from './activity';
 import {
-  ACCOUNT_CAPABILITY,
   type AccountConfig,
   type AccountInfo,
+  type AccountRecord,
   type FeedEvent,
   type HomeserverInfo,
   type InviteStatus,
   type Profile,
   type PublicFile,
+  ACCOUNT_CAPABILITY,
+  readsRoot,
   type SignedRecord,
 } from './model';
 import { parseSignedRecord } from './pkarr';
@@ -34,6 +37,21 @@ export type RingRequest = {
   /** Resolves once Ring's approval has been checked against this homeserver; rejects when the request expires. */
   awaitAccount: () => Promise<AccountInfo>;
 };
+
+/**
+ * The account as the SDK's `GrantSession.account()` returns it, with the
+ * method itself optional: SDK releases up to 0.17.1 do not have it.
+ */
+type SdkAccount = {
+  createdAt: string;
+  disabled: boolean;
+  usedBytes: number;
+  quota: AccountRecord['quota'];
+};
+type GrantView = GrantSession & { account?: () => Promise<SdkAccount> };
+
+/** The SDK's error for a homeserver's refusal names the pubky it could not place. */
+const UNRESOLVED_HOMESERVER = /could not resolve homeserver for ([a-z0-9]{52})/;
 
 /**
  * How long a request waits for Ring. Long enough to install Ring and create a
@@ -87,15 +105,19 @@ export class HomeserverClient {
   }
 
   /** Starts a Ring request; `inviteCode` only for a sign-up on a homeserver that needs one. */
-  startRequest(kind: RingRequestKind, inviteCode: string | null): RingRequest {
-    // The SDK's type admits only /pub/ and /priv/ paths; the protocol takes any
-    // absolute path, and this one is deliberately outside the user's storage.
-    const flow = this.pubky.startCookieAuthFlow(
+  async startRequest(kind: RingRequestKind, inviteCode: string | null): Promise<RingRequest> {
+    const flow = await this.pubky.startGrantAuthFlow(
       ACCOUNT_CAPABILITY as Capabilities,
       this.flowKind(kind, inviteCode),
-      this.config.relay,
+      {
+        clientId: clientId(),
+        relay: this.config.relay,
+      },
     );
-    const account = flow.awaitToken().then((token) => this.confirmAccount(token));
+    const account = flow.awaitApproval().then(
+      (session) => this.confirmAccount(session),
+      (error: unknown) => noAccountOf(error),
+    );
     // An abandoned request may still fail later; nobody is waiting for it then.
     account.catch(() => undefined);
     return {
@@ -112,20 +134,26 @@ export class HomeserverClient {
   }
 
   /**
-   * Signs in at this homeserver with Ring's token, the way any Pubky app
-   * would, then signs out again at once: an account answers with a session,
-   * an unknown pubky with 404. The sign-in is addressed to this homeserver's
-   * key, not wherever the person's own record points, so an account on
-   * another homeserver is never mistaken for one here. The homeserver checks
-   * the token's signature and freshness, and accepts each token only once.
+   * Ring's approval opened a session at the person's homeserver: the one
+   * their own record names, or, for a sign-up, this one. Reads the account
+   * through it, then revokes the grant: the page keeps no session. A session
+   * at another homeserver means no account here, whatever is there.
    */
-  private async confirmAccount(token: AuthToken): Promise<AccountInfo> {
-    const pubky = token.publicKey.z32();
-    const response = await this.homeserverFetch('/session', { method: 'POST', body: new Uint8Array(token.toBytes()) });
-    if (response.status === 404) return { pubky, hasAccount: false };
-    if (!response.ok) throw new Error(await reasonOf(response));
-    await signOut(response.url, pubky);
-    return { pubky, hasAccount: true };
+  private async confirmAccount(session: Session): Promise<AccountInfo> {
+    const pubky = session.info.publicKey.z32();
+    try {
+      const grant = session.grant as GrantView | undefined;
+      if (!grant) throw new Error('The sign-in did not open a grant session');
+      const info = await grant.sessionInfo();
+      const homeserver = info.homeserver.z32();
+      if (homeserver !== this.config.homeserver) return { pubky, hasAccount: false, otherHomeserver: homeserver };
+      if (!info.capabilities.some(readsRoot)) return { pubky, hasAccount: true, partialGrant: true };
+      const account = await readAccount(grant);
+      return account ? { pubky, hasAccount: true, account } : { pubky, hasAccount: true };
+    } finally {
+      // Best effort: a grant left behind expires on its own.
+      await session.signout().catch(() => undefined);
+    }
   }
 
   /**
@@ -301,21 +329,56 @@ export class HomeserverClient {
 }
 
 /**
- * Ends the session a sign-in just opened, at the address that sign-in went to
- * (`sessionUrl`, the `/session` the SDK resolved), naming the person whose
- * session it is in `pubky-host`. The browser's own fetch is used because the
- * SDK's sets `pubky-host` itself, to the homeserver.
- *
- * Best effort: a browser that does not send the homeserver's cookie (it is
- * third-party when the page is on another site) leaves the session open, and
- * that session grants only ACCOUNT_CAPABILITY.
+ * The account as the homeserver reports it, or undefined when it does not:
+ * a homeserver from before `GET /account` takes the path for a storage read
+ * and refuses it (403 on 0.17, 404 otherwise), and an SDK from before
+ * `account()` cannot ask. Any other failure is reported.
  */
-async function signOut(sessionUrl: string, pubky: string): Promise<void> {
+async function readAccount(grant: GrantView): Promise<AccountRecord | undefined> {
+  if (typeof grant.account !== 'function') return undefined;
   try {
-    await fetch(sessionUrl, { method: 'DELETE', headers: { 'pubky-host': pubky }, credentials: 'include' });
-  } catch {
-    // See above: nothing to do about it here.
+    return toAccountRecord(await grant.account());
+  } catch (error) {
+    if (statusCodeOf(error) === 404 || statusCodeOf(error) === 403) return undefined;
+    throw error;
   }
+}
+
+function toAccountRecord(account: SdkAccount): AccountRecord {
+  return {
+    createdAt: parseHomeserverTime(account.createdAt),
+    disabled: account.disabled,
+    usedBytes: account.usedBytes,
+    quota: { effective: { ...account.quota.effective }, overrides: { ...account.quota.overrides } },
+  };
+}
+
+/**
+ * A failed approval that means "no account", or the failure itself. The
+ * homeserver answers 404 for a pubky it does not know; a pubky whose record
+ * names no homeserver at all cannot be placed by the SDK. Who approved is
+ * only known in the second case, from the SDK's message.
+ */
+function noAccountOf(error: unknown): AccountInfo {
+  if (statusCodeOf(error) === 404) return { pubky: null, hasAccount: false };
+  const unresolved = UNRESOLVED_HOMESERVER.exec(messageOf(error));
+  if (unresolved) return { pubky: unresolved[1], hasAccount: false };
+  throw error;
+}
+
+/** The HTTP status in a Pubky SDK error, if it carries one. */
+function statusCodeOf(error: unknown): number | null {
+  const data = (error as { data?: unknown } | null)?.data;
+  const status = typeof data === 'object' && data !== null ? (data as { statusCode?: unknown }).statusCode : undefined;
+  return typeof status === 'number' ? status : null;
+}
+
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/** How the page names itself in Ring's list of grants: its host. */
+function clientId(): string {
+  const host = typeof location === 'undefined' ? '' : location.hostname;
+  return host || 'homeserver-account';
 }
 
 async function statusOf(response: Response): Promise<InviteStatus> {
@@ -366,10 +429,4 @@ function toBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
-}
-
-/** The homeserver's reason for refusing a sign-in, e.g. "AuthToken already used". */
-async function reasonOf(response: Response): Promise<string> {
-  const text = (await response.text().catch(() => '')).trim().slice(0, 200);
-  return text || `The homeserver refused the sign-in (${response.status})`;
 }

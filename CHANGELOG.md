@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The account page shows the signed-in person their account as the homeserver reports it (client `GET /account`, pubky-core #749, after homeserver 0.17.1): when it was created, whether it is disabled (said plainly), the storage used against the allowance with a usage bar, and the download and upload limits and writable paths that apply, each marked "set for you" when set for that account in particular. On a homeserver without the route, or with a page built on an SDK older than `account()` (releases up to 0.17.1), the page says it does not report account details. The page's end-to-end test covers the summary, the revoked grant and a disabled account.
+
 - The Users tab lists every account on homeservers that have the admin `GET /users` route (homeserver 0.17+): when it signed up, what it stores against its allowance with a usage bar, and whether it is disabled; filtered by All, Enabled or Disabled, ordered by signup or by storage, ten at a time in a scrolling box with "Load more". "Manage" opens the account in the editor, which now reads `GET /users/{pubkey}` where it exists, so its status is the homeserver's own and the Account section shows storage used; the account and allowance sections sit inside the "Manage a user" card; after a disable or enable it reads the account again. The never-released `/users/disabled` listing and its card are gone, superseded by the list's Disabled filter.
 - An invite can carry its own limits: the Invites tab's "Create invite" has a "Set limits for this invite" disclosure with the same fields as the user editor (storage, download and upload rates and bursts, writable paths), sent to `POST /generate_signup_token`; whoever signs up with the code gets those limits. Where the dashboard can read config.toml, each empty field shows the homeserver's own default, e.g. "500 (homeserver default)" (the config route now reports `defaultQuota`). The new code is shown once with its QR code, links and a line naming its limits, replacing the "Created this session" list now that every code is listed below. The admin proxy relays what the homeserver finds wrong with the limits.
 - The Users tab gains a user editor for homeservers with the per-user quota route (0.16+): look up an account by pubky, see its allowance with the homeserver's defaults greyed in, change the storage quota, download and upload rates and bursts, and writable paths (empty hands a field back to the default; `unlimited` lifts a limit), and disable or enable the account from an account card that shows its status, Enabled or Disabled, with only the action that applies. Homeservers up to 0.16 do not report that status, so it reads "Not known" until an action here sets it; a homeserver that adds `disabled` to the quota answer will be shown as is. The tab now shows whenever that route exists, so it appears on current homeservers, which have no disabled-users listing. The admin proxy passes `PATCH` through.
@@ -22,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Disabling or enabling a user reported a failure although it had succeeded: the homeserver answers those with a plain-text `Ok`, which the dashboard tried to parse as JSON. Any 2xx answer without a JSON body now counts as success.
+
+### Changed
+
+- The account page signs in with a grant (the SDK's `startGrantAuthFlow`) for `/:r`, reading everything and writing nothing, since `GET /account` requires a grant on the root scope; this replaces the cookie sign-in for `/homeserver-dashboard/account:r`. The page says so before the QR code, reads the account once and revokes the grant. The session is exchanged at the homeserver the pubky's record names, so a pubky living elsewhere is reported as having no account here, naming that homeserver. The page's SDK is `@synonymdev/pubky` 0.17.1.
 
 ## [0.1.29]
 

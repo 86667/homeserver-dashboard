@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AccountConfig, AccountInfo, FeedEvent, InviteStatus, Profile, PublicFile } from '../model';
+import type { AccountConfig, AccountInfo, AccountRecord, FeedEvent, InviteStatus, Profile, PublicFile } from '../model';
 import { AccountFlow } from './AccountFlow';
 import { HomeserverClient, type RingRequest } from '../homeserver-client';
 
@@ -33,6 +33,16 @@ const feedEvent = (kind: 'PUT' | 'DEL', pubky: string, path: string): FeedEvent 
 });
 const BOB = 'o1gg96ewuojmopcjbz8895478wdtxtzzuxnfjjz8o8e77csa1ngo';
 
+const ALICE_ACCOUNT: AccountRecord = {
+  createdAt: new Date('2026-10-22T10:11:12Z'),
+  disabled: false,
+  usedBytes: 450 * 1024 * 1024,
+  quota: {
+    effective: { storageQuotaMb: 500, rateRead: '100mb/m', rateWrite: 'unlimited', allowedWritePaths: ['/pub/x/'] },
+    overrides: { allowedWritePaths: ['/pub/x/'] },
+  },
+};
+
 const publicFile = (path: string, size: number): PublicFile => ({
   url: `pubky://${ALICE}/pub/${path}`,
   path,
@@ -53,7 +63,9 @@ function homeserver({
   const client = {
     isInviteRequired: vi.fn(async () => inviteRequired),
     inviteStatus: vi.fn(async () => inviteStatus(asked++)),
-    startRequest: vi.fn((): RingRequest => ({ authUrl: 'pubkyauth://signup?secret=s', awaitAccount: () => account() })),
+    startRequest: vi.fn(
+      async (): Promise<RingRequest> => ({ authUrl: 'pubkyauth://signup?secret=s', awaitAccount: () => account() }),
+    ),
     listPublicFiles: vi.fn(async () => ({ files: files.map(({ size: _, ...f }) => ({ ...f })), more: false })),
     fileStats: vi.fn(async (f: PublicFile) => ({ size: files.find((x) => x.path === f.path)?.size ?? 0 })),
     profile: vi.fn(async (pubky: string) => (pubky === ALICE ? profile : null)),
@@ -352,7 +364,8 @@ describe('AccountFlow homeserver tab', () => {
 
 describe('AccountFlow page', () => {
   it('offers sign-in in the header from any tab, and shows the QR code on the Account tab', async () => {
-    const client = homeserver();
+    let approve: (info: AccountInfo) => void = () => undefined;
+    const client = homeserver({ account: () => new Promise<AccountInfo>((resolve) => (approve = resolve)) });
     render(<AccountFlow config={CONFIG} initialCode="" />);
     expect(screen.queryByTestId('header-signin')).toBeNull(); // still connecting
     await screen.findByTestId('account-signin');
@@ -360,6 +373,7 @@ describe('AccountFlow page', () => {
     await screen.findByTestId('homeserver-key');
     fireEvent.click(screen.getByTestId('header-signin'));
     expect(await screen.findByTestId('account-qr')).toBeTruthy();
+    approve({ pubky: ALICE, hasAccount: true });
     expect(screen.queryByTestId('header-signin')).toBeNull(); // one at a time
     expect(client.startRequest).toHaveBeenCalledWith('signin', null);
     await screen.findByText('Welcome back');
@@ -426,5 +440,58 @@ describe('AccountFlow signed-in details', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     await screen.findByTestId('account-signin');
     expect(screen.queryByTestId('files-card')).toBeNull();
+  });
+});
+
+describe('AccountFlow account summary', () => {
+  async function signIn(info: AccountInfo) {
+    homeserver({ account: () => Promise.resolve(info) });
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    return screen.findByTestId('account-details');
+  }
+
+  it('shows when the account was made, its storage against the allowance, and its limits', async () => {
+    await signIn({ pubky: ALICE, hasAccount: true, account: ALICE_ACCOUNT });
+    const summary = screen.getByTestId('account-summary');
+    expect(summary.textContent).toContain('Signed up');
+    expect(summary.textContent).toContain('2026');
+    expect(screen.getByTestId('account-storage').textContent).toBe('450 MB of 500 MB (90%)');
+    expect(summary.textContent).toContain('100 MB per minute');
+    expect(summary.textContent).toContain('No limit');
+    expect(summary.textContent).toContain('/pub/x/');
+    expect(screen.getAllByText('set for you')).toHaveLength(1);
+    expect(screen.queryByTestId('account-disabled')).toBeNull();
+    expect(screen.queryByTestId('account-not-reported')).toBeNull();
+  });
+
+  it('says plainly when the account is disabled', async () => {
+    await signIn({ pubky: ALICE, hasAccount: true, account: { ...ALICE_ACCOUNT, disabled: true } });
+    expect(screen.getByTestId('account-disabled').textContent).toContain('Your account is disabled');
+  });
+
+  it('says when the homeserver does not report the account, or was not asked for want of a full grant', async () => {
+    await signIn({ pubky: ALICE, hasAccount: true });
+    expect(screen.getByTestId('account-not-reported')).toBeTruthy();
+    expect(screen.queryByTestId('account-summary')).toBeNull();
+    cleanup();
+    await signIn({ pubky: ALICE, hasAccount: true, partialGrant: true });
+    expect(screen.getByTestId('account-partial-grant')).toBeTruthy();
+    expect(screen.queryByTestId('account-not-reported')).toBeNull();
+  });
+
+  it('explains a pubky that lives on another homeserver, and one the sign-in could not name', async () => {
+    homeserver({ account: () => Promise.resolve({ pubky: ALICE, hasAccount: false, otherHomeserver: BOB }) });
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    const missing = await screen.findByTestId('account-missing');
+    expect(missing.textContent).toContain(`another homeserver (${BOB})`);
+    expect(missing.textContent).toContain(`pubky${ALICE}`);
+    cleanup();
+
+    homeserver({ account: () => Promise.resolve({ pubky: null, hasAccount: false }) });
+    render(<AccountFlow config={CONFIG} initialCode="" />);
+    fireEvent.click(await screen.findByTestId('account-signin'));
+    expect((await screen.findByTestId('account-missing')).querySelector('.font-mono')).toBeNull();
   });
 });

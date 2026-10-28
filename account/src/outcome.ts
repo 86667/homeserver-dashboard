@@ -38,15 +38,23 @@ const HAS_ACCOUNT: Outcome = {
  * `inviteStatus` is the code's status read after a sign-up that sent one.
  */
 export function describeOutcome(kind: RingRequestKind, info: AccountInfo, inviteStatus?: InviteStatus): Outcome {
-  if (!info.hasAccount) return noAccount(kind, inviteStatus);
+  if (!info.hasAccount) return noAccount(kind, info, inviteStatus);
   if (kind === 'signin') return SIGNED_IN;
   if (inviteStatus === 'used') return SIGNED_UP;
   if (inviteStatus === 'valid') return ALREADY_SIGNED_UP;
   return HAS_ACCOUNT;
 }
 
-function noAccount(kind: RingRequestKind, inviteStatus?: InviteStatus): Outcome {
+function noAccount(kind: RingRequestKind, info: AccountInfo, inviteStatus?: InviteStatus): Outcome {
   const title = 'No account on this homeserver';
+  const codeNote = inviteStatus === 'valid' ? ' Your invite code is still unused, so you can try again with it.' : '';
+  if (!info.hasAccount && info.otherHomeserver) {
+    return {
+      hasAccount: false,
+      title,
+      text: `The pubky you approved with lives on another homeserver (${info.otherHomeserver}), so there is nothing to show here.${codeNote}`,
+    };
+  }
   if (kind === 'signin') {
     return {
       hasAccount: false,
@@ -54,7 +62,6 @@ function noAccount(kind: RingRequestKind, inviteStatus?: InviteStatus): Outcome 
       text: 'This homeserver has no account for the pubky you approved with. Pick a pubky that was signed up here, or sign up.',
     };
   }
-  const codeNote = inviteStatus === 'valid' ? ' Your invite code is still unused, so you can try again with it.' : '';
   return {
     hasAccount: false,
     title,

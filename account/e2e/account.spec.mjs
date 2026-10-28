@@ -17,7 +17,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { Keypair, Pubky, PublicKey } from '@synonymdev/pubky';
+import { GrantManager, Keypair, Pubky, PublicKey, SigninGrantDeepLink } from '@synonymdev/pubky';
 import { chromium } from 'playwright-core';
 
 const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -94,15 +94,27 @@ if (!info) {
 const pubky = Pubky.testnet(HOST);
 const mintCode = async () => (await (await admin('/generate_signup_token')).text()).trim();
 
-/** What Ring does with a scanned link: sign up when asked (unless told not to), then approve a sign-in for it. */
+/**
+ * What Ring does with a scanned link: for a sign-up, create the account on
+ * the named homeserver with the code (the SDK's signer only approves, as the
+ * page's grant is separate from the sign-up), then approve the grant with
+ * `keypair`. Told not to sign up, Ring falls back to approving a sign-in with
+ * the key it already has, as the real Ring does when its sign-up fails: the
+ * same grant request, without the sign-up.
+ */
 async function ring(url, keypair, { signUp = true } = {}) {
-  const parsed = new URL(url.replace('pubkyauth://', 'https://ring/'));
-  const query = parsed.searchParams;
-  if (parsed.pathname === '/signup' && signUp) {
-    await pubky.signer(keypair).signup(PublicKey.from(query.get('hs')), query.get('st'));
+  if (url.startsWith('pubkyauth://signup_grant?')) {
+    const link = new URL(url.replace('pubkyauth://signup_grant?', 'https://ring/signin_grant?'));
+    if (signUp) {
+      await pubky.signer(keypair).signup(PublicKey.from(link.searchParams.get('hs')), link.searchParams.get('st'));
+    } else {
+      link.searchParams.delete('hs');
+      link.searchParams.delete('st');
+      url = link.href.replace('https://ring/', 'pubkyauth://');
+      SigninGrantDeepLink.parse(url); // throws when the conversion left it malformed
+    }
   }
-  const signIn = `pubkyauth://signin?caps=${encodeURIComponent(query.get('caps'))}&relay=${encodeURIComponent(query.get('relay'))}&secret=${query.get('secret')}`;
-  await pubky.signer(keypair).approveAuthRequest(signIn);
+  await pubky.signer(keypair).approveAuthRequest(url);
 }
 
 async function ringLink(page) {
@@ -116,10 +128,13 @@ const server = process.env.ACCOUNT_E2E_URL
   : await startPreview(info);
 const browser = await chromium.launch({ headless: true, executablePath: CHROME });
 const alice = Keypair.random();
+let page;
+const consoleLines = [];
 try {
-  const page = await (await browser.newContext({ viewport: { width: 420, height: 900 } })).newPage();
+  page = await (await browser.newContext({ viewport: { width: 420, height: 900 } })).newPage();
   const cspViolations = [];
   page.on('console', (message) => {
+    consoleLines.push(`[${message.type()}] ${message.text()}`);
     if (/Content Security Policy/i.test(message.text())) cspViolations.push(message.text());
   });
 
@@ -132,15 +147,40 @@ try {
   step('sign-up through Ring creates the account');
   await page.click('[data-testid="account-signup"]');
   const signUpLink = await ringLink(page);
-  check(signUpLink.startsWith('pubkyauth://signup?'), 'Ring is asked to sign up', signUpLink.slice(0, 40));
+  check(
+    signUpLink.startsWith('pubkyauth://signup_grant?'),
+    'Ring is asked to sign up with a grant',
+    signUpLink.slice(0, 40),
+  );
   check(
     signUpLink.includes(`hs=${info.public_key}`) && signUpLink.includes(`st=${code}`),
     'link names homeserver and code',
+  );
+  check(decodeURIComponent(signUpLink).includes('caps=/:r&'), 'the grant asks to read everything, as /account needs');
+  check(
+    (await page.textContent('[data-testid="account-consent"]')).includes('read all your data'),
+    'the page says what Ring will ask for',
   );
   await ring(signUpLink, alice);
   await page.waitForSelector('text=Welcome to your homeserver', { timeout: 30_000 });
   const shown = await page.textContent('[data-testid="account-pubky"]');
   check(shown === `pubky${alice.publicKey.z32()}`, 'the new pubky is shown', shown);
+
+  step("the account is described: signed up today, nothing stored, the homeserver's limits");
+  await page.waitForSelector('[data-testid="account-summary"]', { timeout: 10_000 });
+  const storage = await page.textContent('[data-testid="account-storage"]');
+  check(/^0 B/.test(storage), 'a fresh account has used no storage', storage);
+  const summary = await page.textContent('[data-testid="account-summary"]');
+  check(summary.includes('Signed up') && summary.includes(String(new Date().getFullYear())), 'signup date shown');
+  check(summary.includes('Download') && summary.includes('Upload'), 'transfer limits shown');
+  check(!(await page.$('[data-testid="account-disabled"]')), 'a fresh account is not disabled');
+
+  step("the grant the page used is revoked: Ring's list of grants for alice is empty");
+  const aliceSession = await pubky.signer(alice).signin('account-e2e');
+  const grants = await new GrantManager(aliceSession).list();
+  const pageGrants = grants.filter((g) => g.clientId !== 'account-e2e');
+  check(pageGrants.length === 0, 'no grant left behind by the page', JSON.stringify(pageGrants.map((g) => g.clientId)));
+  await aliceSession.signout();
 
   step('back at the start, the spent code shows as used');
   await page.click('button:has-text("Sign out")');
@@ -167,11 +207,24 @@ try {
   await page.waitForSelector('[data-testid="account-missing"]', { timeout: 30_000 });
   check(true, 'unknown key reported as no account');
 
+  step('a disabled account is told so');
+  await admin(`/users/${alice.publicKey.z32()}/disable`, { method: 'POST' });
+  await page.click('button:has-text("Try again")');
+  await page.click('[data-testid="account-signin"]');
+  await ring(await ringLink(page), alice);
+  await page.waitForSelector('[data-testid="account-disabled"]', { timeout: 30_000 });
+  check(true, 'disabled account reported');
+  await admin(`/users/${alice.publicKey.z32()}/enable`, { method: 'POST' });
+
   check(cspViolations.length === 0, 'no Content Security Policy violations', cspViolations[0]);
   console.log(`SPEC PASS account (${checks} checks)`);
 } catch (error) {
   console.error('SPEC FAIL account');
   console.error(error);
+  // What the page showed when it went wrong, and what the browser logged.
+  const shown = await page?.evaluate(() => document.body.innerText).catch((e) => `unavailable: ${e.message}`);
+  if (shown) console.error(`Page: ${shown.replace(/\s+/g, ' ').slice(0, 800)}`);
+  if (consoleLines.length > 0) console.error(`Browser console:\n${consoleLines.slice(-20).join('\n')}`);
   process.exitCode = 1;
 } finally {
   await browser.close();

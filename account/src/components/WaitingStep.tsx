@@ -24,6 +24,10 @@ export function WaitingStep({ kind, authUrl, onCancel }: WaitingStepProps) {
           ? 'Scan with Pubky Ring. Ring creates your keys, signs you up here and asks you to approve.'
           : 'Scan with Pubky Ring and approve the sign-in.'}
       </p>
+      <p className="text-center text-xs text-muted-foreground/70" data-testid="account-consent">
+        Ring will ask you to let this page read all your data here, and write none: the homeserver reports an account
+        only to such a grant. The page reads your account with it once, then revokes it.
+      </p>
       <div className="rounded-lg border border-border bg-white p-3 shadow-sm">
         <QRCodeSVG value={authUrl} size={220} level="M" data-testid="account-qr" />
       </div>

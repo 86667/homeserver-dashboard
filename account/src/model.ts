@@ -1,13 +1,16 @@
 /** The account page's shared types, and the invite code format. */
 
 /**
- * The capability the account page asks Pubky Ring to sign. An AuthToken has
- * no audience, so this distinctive scope is what Ring shows on its consent
- * screen. It is read-only and outside `/pub/`: the page signs in at the
- * homeserver with the token to see whether the account exists, so the
- * session that opens must grant nothing there.
+ * The capability the account page asks Pubky Ring to sign: read everything,
+ * write nothing. The homeserver reports an account (`GET /account`) only to
+ * a session whose grant reads the root `/`, since an account is not scoped
+ * to any path. The page uses the session for that one read and then revokes
+ * the grant, so nothing stays authorised afterwards.
  */
-export const ACCOUNT_CAPABILITY = '/homeserver-dashboard/account:r';
+export const ACCOUNT_CAPABILITY = '/:r';
+
+/** Whether a granted capability (as the SDK lists them, e.g. `/:rw`) reads the root, which `GET /account` needs. */
+export const readsRoot = (capability: string) => /^\/:[a-z]*r[a-z]*$/.test(capability);
 
 /** The homeserver's answer about an invite code, as the page shows it. */
 export type InviteStatus = 'valid' | 'used' | 'unknown' | 'not_required' | 'rate_limited' | 'error';
@@ -22,11 +25,48 @@ export type AccountConfig = {
   testnetHost: string | null;
 };
 
-/** Who approved a Ring request, and whether they have an account on this homeserver. */
-export type AccountInfo = {
-  pubky: string;
-  hasAccount: boolean;
+/**
+ * The limits of a quota, as the Pubky SDK names them. A limit is a number, a
+ * rate such as `100mb/m`, or `unlimited`; an absent one in `overrides` means
+ * the homeserver's default applies.
+ */
+export type QuotaLimits = {
+  storageQuotaMb?: number | 'unlimited';
+  rateRead?: string;
+  rateWrite?: string;
+  rateReadBurst?: number;
+  rateWriteBurst?: number;
+  allowedWritePaths?: string[];
 };
+
+/** A person's account as the homeserver reports it to them (`GET /account`). */
+export type AccountRecord = {
+  /** When the account was created; null when the homeserver's answer could not be read as a time. */
+  createdAt: Date | null;
+  /** A disabled account can read and delete but not write. */
+  disabled: boolean;
+  usedBytes: number;
+  /** The limits that apply (`effective`), and the ones set for this account in particular (`overrides`). */
+  quota: { effective: QuotaLimits; overrides: QuotaLimits };
+};
+
+/** Who approved a Ring request, and whether they have an account on this homeserver. */
+export type AccountInfo =
+  | {
+      pubky: string;
+      hasAccount: true;
+      /** The account's details; absent when the homeserver does not report them. */
+      account?: AccountRecord;
+      /** Ring granted less than reading everything, so the homeserver was not asked: it reports an account only to a grant that reads the root. */
+      partialGrant?: boolean;
+    }
+  | {
+      /** Null when the sign-in failed before the homeserver named who approved. */
+      pubky: string | null;
+      hasAccount: false;
+      /** The homeserver the pubky's own record names instead of this one, when that is why there is no account here. */
+      otherHomeserver?: string;
+    };
 
 /** One of a person's public files on this homeserver. Size and date arrive later, from a HEAD request. */
 export type PublicFile = {
