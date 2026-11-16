@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { NextRequest, NextResponse } from 'next/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { newIdentity } from './auth/__fixtures__/ring';
+import { ADMIN_SESSION_COOKIE } from './auth/session-cookie';
+import { createSession, resetAuthStore } from './auth/store';
 import { SESSION_COOKIE, hasValidSession, isPasswordCorrect, setSessionCookie, withSession } from './session';
 
 function issuedCookie(): string {
@@ -92,6 +95,58 @@ describe('session', () => {
       vi.stubEnv('DASHBOARD_PASSWORD', '');
       const response = await withSession(handler)(request());
       expect(response.status).toBe(200);
+    });
+  });
+
+  describe('withSession with admin sign-in (ADMIN_PUBKEYS)', () => {
+    const admin = newIdentity();
+    const handler = vi.fn(async () => NextResponse.json({ ok: true }));
+    /** A request as the dashboard page's own script sends it, with the given cookies. */
+    const pageRequest = (cookies: Record<string, string>) =>
+      new NextRequest('http://dashboard.test/api/x', {
+        headers: {
+          host: 'dashboard.test',
+          'x-dashboard-request': '1',
+          cookie: Object.entries(cookies)
+            .map(([name, value]) => `${name}=${value}`)
+            .join('; '),
+        },
+      });
+
+    beforeEach(() => {
+      resetAuthStore();
+      handler.mockClear();
+      vi.stubEnv('ADMIN_PUBKEYS', admin.pubky);
+    });
+
+    it('asks for the admin session alone when no password is configured', async () => {
+      vi.stubEnv('DASHBOARD_PASSWORD', '');
+      expect((await withSession(handler)(pageRequest({}))).status).toBe(401);
+      const signedIn = pageRequest({ [ADMIN_SESSION_COOKIE]: createSession(admin.publicKey) });
+      expect((await withSession(handler)(signedIn)).status).toBe(200);
+    });
+
+    it('asks for both sessions when a password is configured too: either one alone is refused', async () => {
+      vi.stubEnv('DASHBOARD_PASSWORD', 'secret');
+      const password = issuedCookie();
+      const adminSession = createSession(admin.publicKey);
+
+      expect((await withSession(handler)(pageRequest({ [SESSION_COOKIE]: password }))).status).toBe(401);
+      expect((await withSession(handler)(pageRequest({ [ADMIN_SESSION_COOKIE]: adminSession }))).status).toBe(401);
+      expect(handler).not.toHaveBeenCalled();
+
+      const both = pageRequest({ [SESSION_COOKIE]: password, [ADMIN_SESSION_COOKIE]: adminSession });
+      expect((await withSession(handler)(both)).status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not take the password session for an admin session, or the other way round', async () => {
+      vi.stubEnv('DASHBOARD_PASSWORD', 'secret');
+      const swapped = pageRequest({
+        [SESSION_COOKIE]: createSession(admin.publicKey),
+        [ADMIN_SESSION_COOKIE]: issuedCookie(),
+      });
+      expect((await withSession(handler)(swapped)).status).toBe(401);
     });
   });
 });

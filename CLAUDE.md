@@ -21,11 +21,14 @@ permission change here can break the others.
   reveals the API tab.
 - Read env at request time, never at module scope. The image is built once and gets its env, such
   as `PLATFORM=umbrel`, only when it runs, so a value read at build time is frozen into the image.
-- The login only exists when `DASHBOARD_PASSWORD` is set (the Umbrel app sets it). Unset, whoever
-  can reach the port is an admin and can read the admin password; never bind it beyond loopback or
-  suggest exposing it without an authenticating proxy in front.
-- Every API route except `/api/health` and `/api/auth/login` is wrapped in `withSession`, and
-  `session-guard.test.ts` fails on a route that is not. Do not move the check into a Next proxy: it
+- A login only exists when `DASHBOARD_PASSWORD` is set (the Umbrel app sets it) or `ADMIN_PUBKEYS`
+  is set (admin sign-in with Pubky Ring). With neither, whoever can reach the port is an admin and
+  can read the admin password; never bind it beyond loopback or suggest exposing it without an
+  authenticating proxy in front.
+- Every API route except `/api/health`, `/api/auth/login` and the Pubky Ring sign-in routes under
+  `/api/auth/ring/` is wrapped in `withSession`, and `session-guard.test.ts` fails on a route that
+  is not. `withSession` applies both gates: the password login (`DASHBOARD_PASSWORD`) and the admin
+  sign-in with Pubky Ring (`ADMIN_PUBKEYS`). Do not move the check into a Next proxy: it
   buffers request bodies and truncates them past its size limit, which cuts large uploads.
 
 ## Testing

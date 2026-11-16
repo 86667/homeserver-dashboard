@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { RouteError, errorResponse } from '@/lib/server/errors';
+import { refuseUnlessAdmin } from '@/lib/server/auth/guard';
 import { getRequestId } from '@/lib/server/logger';
 
 export const SESSION_COOKIE = 'homeserver_dashboard_session';
@@ -53,9 +54,11 @@ export function setSessionCookie(response: NextResponse): void {
 }
 
 /**
- * Wraps a route handler so it answers 401 without a valid session. Checked
- * per route rather than in a proxy: a Next proxy buffers request bodies and
- * truncates them past its size limit, which would cut large uploads.
+ * Wraps a route handler so it answers 401 without a valid session: the
+ * password login's when DASHBOARD_PASSWORD is set, an admin's Pubky Ring
+ * sign-in when ADMIN_PUBKEYS is set, both when both are. Checked per route
+ * rather than in a proxy: a Next proxy buffers request bodies and truncates
+ * them past its size limit, which would cut large uploads.
  */
 export function withSession<A extends unknown[]>(
   handler: (request: NextRequest, ...rest: A) => Promise<Response>,
@@ -64,6 +67,6 @@ export function withSession<A extends unknown[]>(
     if (!hasValidSession(request.cookies.get(SESSION_COOKIE)?.value)) {
       return errorResponse(new RouteError(401, 'unauthorized', 'Log in to the dashboard first'), getRequestId(request));
     }
-    return handler(request, ...rest);
+    return refuseUnlessAdmin(request) ?? handler(request, ...rest);
   };
 }

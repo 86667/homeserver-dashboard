@@ -21,6 +21,10 @@ vi.mock('@/hooks/admin', () => ({
   useAdminActions: () => ({ generateInvite, disableUser, enableUser, generateInviteError: null }),
 }));
 vi.mock('@/components/providers/PlatformProvider', () => ({ usePlatform: () => 'generic' }));
+// Sign-in is off in these tests; the gate has its own.
+vi.mock('@/components/organisms/AuthGate', () => ({
+  AuthGate: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 vi.mock('@/hooks/useAccountPageUrl', () => ({ useAccountPageUrl: () => 'https://dashboard.example.com/' }));
 
 // The page is tested for what it hands the Invites and Users tabs; their

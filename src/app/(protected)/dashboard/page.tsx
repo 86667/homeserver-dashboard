@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAdminInfo, useAdminActions } from '@/hooks/admin';
 import { useAccountPageUrl } from '@/hooks/useAccountPageUrl';
 import { usePlatform } from '@/components/providers/PlatformProvider';
+import { AuthGate } from '@/components/organisms/AuthGate';
 import { DashboardNavbar } from '@/components/organisms/DashboardNavbar';
 import { DashboardOverview, useSetupGuideDismissal } from '@/components/organisms/DashboardOverview';
 import { ApiExplorer } from '@/components/organisms/ApiExplorer';
@@ -69,6 +70,14 @@ function TabUnavailableNotice() {
 }
 
 export default function DashboardPage() {
+  return (
+    <AuthGate>
+      <Dashboard />
+    </AuthGate>
+  );
+}
+
+function Dashboard() {
   const platform = usePlatform();
   const accountPageUrl = useAccountPageUrl();
   const {
